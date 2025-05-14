@@ -1,9 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, Index } from "typeorm";
+// alert.entity.ts (updated)
+import { Entity, Column, PrimaryColumn, Index, BeforeInsert, BeforeUpdate } from "typeorm";
+import { createHash } from "crypto";
 
 @Entity("alert")
 @Index(["user", "datestr", "alert_name"], { unique: true })
 export class Alert {
-    @PrimaryGeneratedColumn("uuid")
+    @PrimaryColumn()
     ID: string;
 
     @Column()
@@ -38,10 +40,21 @@ export class Alert {
 
     @Column({ type: "boolean", default: false })
     isUnderIncident: boolean;
+    
+    @Column({ type: "varchar", nullable: true })
+    incidentId: string;
 
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
     created_at: Date;
 
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP" })
     updated_at: Date;
+
+    @BeforeInsert()
+    @BeforeUpdate()
+    generateId() {
+        // Create a hash using the composite key fields
+        const hashInput = `${this.user}|${this.datestr.toISOString()}|${this.alert_name}`;
+        this.ID = createHash('sha256').update(hashInput).digest('hex');
+    }
 }

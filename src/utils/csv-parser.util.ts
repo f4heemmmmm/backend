@@ -1,3 +1,5 @@
+// backend/src/utils/csv-parser.util.ts
+
 import * as fs from "fs";
 import * as path from "path";
 import * as csv from "csv-parse";
@@ -24,9 +26,16 @@ export class CSVParserUtil {
         if (!config) {
             throw new Error("Configuration not found!");
         }
-        this.dropPath = config.storage.csv.dropPath;
-        this.processedPath = config.storage.csv.processedPath;
-        this.errorPath = config.storage.csv.errorPath;
+        
+        // Use environment variables if provided, otherwise use config defaults
+        this.dropPath = process.env.CSV_DROP_PATH || config.storage.csv.dropPath;
+        this.processedPath = process.env.CSV_PROCESSED_PATH || config.storage.csv.processedPath;
+        this.errorPath = process.env.CSV_ERROR_PATH || config.storage.csv.errorPath;
+        
+        this.logger.log(`CSV Parser initialized with paths: 
+            Drop: ${this.dropPath}, 
+            Processed: ${this.processedPath}, 
+            Error: ${this.errorPath}`);
     }
     
     /**
@@ -72,8 +81,19 @@ export class CSVParserUtil {
                     // Convert UNIX timestamps to Date objects
                     let windowsStart, windowsEnd;
                     try {
-                        windowsStart = new Date(parseInt(record.windows_start) * 1000);
-                        windowsEnd = new Date(parseInt(record.windows_end) * 1000);
+                        // Try parsing as Unix timestamp (seconds)
+                        if (/^\d+$/.test(record.windows_start.toString())) {
+                            windowsStart = new Date(parseInt(record.windows_start) * 1000);
+                        } else {
+                            // Try parsing as standard date string
+                            windowsStart = new Date(record.windows_start);
+                        }
+                        
+                        if (/^\d+$/.test(record.windows_end.toString())) {
+                            windowsEnd = new Date(parseInt(record.windows_end) * 1000);
+                        } else {
+                            windowsEnd = new Date(record.windows_end);
+                        }
                         
                         // Validate dates
                         if (isNaN(windowsStart.getTime()) || isNaN(windowsEnd.getTime())) {
@@ -85,36 +105,86 @@ export class CSVParserUtil {
                     }
 
                     // Custom parsing for Python-style list string
-                    let parsedWindows = [];
+                    const parsedWindows: string[] = [];
                     if (record.windows) {
                         try {
-                            const windows = record.windows
-                                .replace(/^\[|\]$/g, '')                                        // Remove outer brackets
-                                .split(/'\s*,?\s*'/)                                            // Split by comma or whitespace between quotes
-                                .map((dateStr: string) => dateStr.replace(/^'|'$/g, '').trim()) // Remove quotes and trim
-                                .filter((dateStr: string) => dateStr.length > 0);               // Filter out empty strings
-                            
-                            parsedWindows = windows.map((dateStr: string) => {
-                                // Convert to ISO format
-                                const date = new Date(dateStr);
-                                if (isNaN(date.getTime())) {
-                                    throw new Error(`Invalid date string: ${dateStr}`);
+                            // Handle different array formats
+                            if (typeof record.windows === 'string') {
+                                if (record.windows.startsWith('[') && record.windows.endsWith(']')) {
+                                    // Python-style list representation
+                                    const windows = record.windows
+                                        .replace(/^\[|\]$/g, '')                                        // Remove outer brackets
+                                        .split(/'\s*,?\s*'/)                                            // Split by comma or whitespace between quotes
+                                        .map((dateStr: string) => dateStr.replace(/^'|'$/g, '').trim()) // Remove quotes and trim
+                                        .filter((dateStr: string) => dateStr.length > 0);               // Filter out empty strings
+                                    
+                                    windows.forEach((dateStr: string) => {
+                                        try {
+                                            // Convert to ISO format
+                                            const date = new Date(dateStr);
+                                            if (!isNaN(date.getTime())) {
+                                                parsedWindows.push(date.toISOString());
+                                            }
+                                        } catch (e) {
+                                            this.logger.warn(`Invalid date string: ${dateStr}`);
+                                        }
+                                    });
+                                } else if (record.windows.includes(',')) {
+                                    // Simple comma-separated format
+                                    record.windows
+                                        .split(',')
+                                        .map(dateStr => dateStr.trim())
+                                        .filter(dateStr => dateStr.length > 0)
+                                        .forEach(dateStr => {
+                                            try {
+                                                const date = new Date(dateStr);
+                                                if (!isNaN(date.getTime())) {
+                                                    parsedWindows.push(date.toISOString());
+                                                }
+                                            } catch (e) {
+                                                this.logger.warn(`Invalid date string: ${dateStr}`);
+                                            }
+                                        });
+                                } else {
+                                    // Single date string
+                                    try {
+                                        const date = new Date(record.windows);
+                                        if (!isNaN(date.getTime())) {
+                                            parsedWindows.push(date.toISOString());
+                                        }
+                                    } catch (e) {
+                                        this.logger.warn(`Invalid date string: ${record.windows}`);
+                                    }
                                 }
-                                return date.toISOString();
-                            });
+                            } else if (Array.isArray(record.windows)) {
+                                // Already an array
+                                record.windows.forEach((dateStr: string) => {
+                                    try {
+                                        const date = new Date(dateStr);
+                                        if (!isNaN(date.getTime())) {
+                                            parsedWindows.push(date.toISOString());
+                                        }
+                                    } catch (e) {
+                                        this.logger.warn(`Invalid date string: ${dateStr}`);
+                                    }
+                                });
+                            }
                         } catch (error) {
                             this.logger.warn(`Error parsing windows array: ${error.message}`, record);
-                            parsedWindows = [];
+                            // Keep parsedWindows as empty array
                         }
                     }
 
-                    records.push({
+                    const incident: CreateIncidentDTO = {
                         user: record.user,
                         windows_start: windowsStart,
                         windows_end: windowsEnd,
                         windows: parsedWindows,
                         score: parseFloat(record.score) || 0,
-                    });
+                    };
+                    
+                    this.logger.debug(`Created incident DTO: ${JSON.stringify(incident)}`);
+                    records.push(incident);
                 } catch (error) {
                     this.logger.error(`Error parsing incident record: ${error.message}`, record);
                 }
@@ -169,37 +239,69 @@ export class CSVParserUtil {
                     this.logger.debug(`Processing alert record: ${JSON.stringify(record)}`);
                     
                     // Robust parsing of Evidence field
-                    let evidence: any = {};
+                    // Always ensure required fields are present according to database constraints
+                    let evidence: any = {
+                        site: "",
+                        count: 0,
+                        list_raw_events: []
+                    };
+                    
                     try {
                         if (typeof record.evidence === "string") {
                             try {
-                                evidence = JSON.parse(record.evidence);
-                            } catch {
-                                evidence = this.parseStringifiedEvidence(record.evidence);
+                                // Try standard JSON parsing first
+                                const parsedEvidence = JSON.parse(record.evidence);
+                                evidence = {
+                                    ...evidence, // Keep defaults as fallback
+                                    ...parsedEvidence // Override with parsed values
+                                };
+                            } catch (jsonError) {
+                                // Fallback to custom parsing
+                                const parsedEvidence = this.parseStringifiedEvidence(record.evidence);
+                                evidence = {
+                                    ...evidence, // Keep defaults as fallback
+                                    ...parsedEvidence // Override with parsed values
+                                };
                             }
-                        } else if (typeof record.evidence === "object") {
-                            evidence = record.evidence;
+                        } else if (typeof record.evidence === "object" && record.evidence !== null) {
+                            evidence = {
+                                ...evidence, // Keep defaults as fallback
+                                ...record.evidence // Override with provided values
+                            };
                         }
                     } catch (evidenceParseError) {
                         this.logger.warn(`Could not parse evidence for alert ${record.alert_name}: ${evidenceParseError.message}`);
-                        evidence = {};
+                        // Default evidence object already has required fields
                     }
 
-                    // Robust parsing of 'list_raw_events' in Evidence field (if available)
-                    let parsedListRawEvents: any[] = [];
-                    if (evidence.list_raw_events) {
+                    // Ensure list_raw_events is always an array
+                    if (!Array.isArray(evidence.list_raw_events)) {
                         try {
-                            parsedListRawEvents = this.parseListRawEvents(evidence.list_raw_events);
+                            evidence.list_raw_events = this.parseListRawEvents(evidence.list_raw_events || "");
                         } catch (listEventsError) {
-                            this.logger.warn(`Could not parse 'list_raw_events' for alert ${record.alert_name}: ${listEventsError.message}`);
+                            this.logger.warn(`Could not parse 'list_raw_events': ${listEventsError.message}`);
+                            evidence.list_raw_events = [];
                         }
                     }
+                    
+                    // Convert count to number if it's not already
+                    evidence.count = typeof evidence.count === 'number' ? evidence.count : parseInt(evidence.count) || 0;
+                    
+                    // Ensure site is a string
+                    evidence.site = evidence.site || "";
                     
                     // Ensure date is properly parsed
                     let datestr;
                     try {
                         if (record.datestr) {
-                            datestr = new Date(parseInt(record.datestr) * 1000);
+                            // Try parsing as Unix timestamp first
+                            if (/^\d+$/.test(record.datestr.toString())) {
+                                datestr = new Date(parseInt(record.datestr) * 1000);
+                            } else {
+                                // Try parsing as date string
+                                datestr = new Date(record.datestr);
+                            }
+                            
                             if (isNaN(datestr.getTime())) {
                                 throw new Error(`Invalid timestamp: ${record.datestr}`);
                             }
@@ -213,25 +315,23 @@ export class CSVParserUtil {
                         datestr = new Date(); // Fallback to current date
                     }
                     
-                    records.push({
+                    // Ensure all required fields have default values
+                    const alertRecord: CreateAlertDTO = {
                         user: record.user || "",
                         datestr: datestr,
-                        evidence: {
-                            site: evidence.site || "",
-                            count: parseInt(evidence.count) || 0,
-                            list_raw_events: parsedListRawEvents,
-                            appAccessContext: evidence.appAccessContext || null,
-                            ...evidence
-                        },
+                        evidence: evidence,
                         score: parseFloat(record.score) || 0,
                         alert_name: record.alert_name || "",
                         MITRE_tactic: record.MITRE_tactic || "",
                         MITRE_technique: record.MITRE_technique || "",
-                        isUnderIncident: record.isUnderIncident || false,
+                        isUnderIncident: record.isUnderIncident === true || record.isUnderIncident === "true",
                         Logs: record.Logs || "",
                         Detection_model: record.Detection_model || "",
                         Description: record.Description || "",
-                    });
+                    };
+                    
+                    this.logger.debug(`Prepared alert record: ${JSON.stringify(alertRecord)}`);
+                    records.push(alertRecord);
                 } catch (error) {
                     this.logger.error(`Error parsing alert record: ${error.message}`, record);
                 }
@@ -316,14 +416,23 @@ export class CSVParserUtil {
         } catch (error) {
             this.logger.debug(`Standard JSON.parse failed: ${error.message}, trying normalized format`);
             try {
+                // Try to normalize Python-like dictionary strings to valid JSON
                 const normalizedJSON = cleanedString
                     .replace(/(\w+):/g, '"$1":')        // Add quotes to keys
                     .replace(/'/g, '"')                 // Replace single quotes with double quotes
                     .replace(/\\/g, '\\\\');            // Escape backslashes
+                
                 return JSON.parse(normalizedJSON);
             } catch (normalizeError) {
-                this.logger.debug(`Normalized JSON parse failed: ${normalizeError.message}, returning original`);
-                return { original: cleanedString };
+                this.logger.debug(`Normalized JSON parse failed: ${normalizeError.message}, returning base object`);
+                
+                // Return fallback object with required fields
+                return { 
+                    site: "",
+                    count: 0,
+                    list_raw_events: [],
+                    original: cleanedString 
+                };
             }
         }
     }
@@ -341,29 +450,64 @@ export class CSVParserUtil {
         
         // If it's a string, attempt to parse it as JSON
         if (typeof listRawEvents === "string") {
+            // Empty string check
+            if (!listRawEvents || listRawEvents.trim() === '') {
+                return [];
+            }
+            
+            // Try to parse as JSON array
+            if (listRawEvents.startsWith('[') && listRawEvents.endsWith(']')) {
+                try {
+                    return JSON.parse(listRawEvents);
+                } catch (error) {
+                    // Continue with other parsing methods if JSON.parse fails
+                    this.logger.debug(`JSON.parse failed for list_raw_events: ${error.message}`);
+                }
+            }
+            
             // Remove outer brackets/quotes
             let cleanedString = listRawEvents
                 .replace(/^["'\[]+|["\'\]]+$/g, '')     // Remove outer quotes and brackets
                 .trim();                                // Trim whitespaces
 
-            // Empty string check
+            // Empty string check after cleaning
             if (!cleanedString) {
                 return [];
             }
 
             // Split by comma, handling potential JSON conflicts
             const events = cleanedString.split(/,\s*(?={)/);
-
-            return events.map(eventString => {
+            
+            const parsedEvents: any[] = [];
+            
+            events.forEach(eventString => {
+                eventString = eventString.trim();
+                if (!eventString) {
+                    return; // Skip empty strings
+                }
+                
                 try {
-                    return JSON.parse(eventString.trim());
+                    // Try to parse as JSON object
+                    if (eventString.startsWith('{') && eventString.endsWith('}')) {
+                        parsedEvents.push(JSON.parse(eventString));
+                    } else {
+                        // Try to normalize and then parse
+                        const normalized = eventString
+                            .replace(/(\w+):/g, '"$1":')
+                            .replace(/'/g, '"');
+                            
+                        parsedEvents.push(JSON.parse(`{${normalized}}`));
+                    }
                 } catch (error) {
                     this.logger.debug(`Failed to parse event JSON: ${error.message}, returning as string`);
-                    return eventString.trim();
+                    parsedEvents.push(eventString);
                 }
-            }).filter(event => event !== "");
+            });
+            
+            return parsedEvents.filter(event => event !== null && event !== "");
         }
         
+        // If it's not an array or string, return empty array
         return [];
     }
 }

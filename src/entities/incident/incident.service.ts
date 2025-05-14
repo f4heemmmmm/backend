@@ -1,16 +1,23 @@
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between, FindOptionsWhere, MoreThanOrEqual } from "typeorm";
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import { Repository, Between, FindOptionsWhere, MoreThanOrEqual, ILike, FindOptionsOrder } from "typeorm";
+import { Injectable, NotFoundException, ConflictException, Inject, forwardRef } from "@nestjs/common";
 
 // Incident Files Import
 import { Incident } from "./incident.entity";
 import { CreateIncidentDTO, UpdateIncidentDTO, IncidentResponseDTO } from "./incident.dto";
+import { AlertService } from "../alert/alert.service";
+
+// Define types for sorting
+type SortField = 'windows_start' | 'score' | 'user';
+type SortOrder = 'asc' | 'desc';
 
 @Injectable()
 export class IncidentService {
     constructor(
         @InjectRepository(Incident)
-        private incidentRepository: Repository<Incident>
+        private incidentRepository: Repository<Incident>,
+        @Inject(forwardRef(() => AlertService))
+        private readonly alertService: AlertService
     ) {}
 
     private mapToResponseDTO(incident: Incident): IncidentResponseDTO {
@@ -27,33 +34,22 @@ export class IncidentService {
     }
 
     /**
-     * Create a new incident
-     * @param createIncidentDTO Incident creation data
-     * @returns The created incident
+     * Find an incident by its ID
+     * @param id Incident ID
+     * @returns The incident with the specified ID
      */
-    async create(createIncidentDTO: CreateIncidentDTO): Promise<IncidentResponseDTO> {
-        const checkExistingIncident = await this.incidentRepository.findOne({
-            where: {
-                user: createIncidentDTO.user,
-                windows_start: createIncidentDTO.windows_start,
-                windows_end: createIncidentDTO.windows_end,
-            }
+    async findById(id: string): Promise<IncidentResponseDTO> {
+        const incident = await this.incidentRepository.findOne({
+            where: { ID: id }
         });
-        if (checkExistingIncident) {
-            throw new ConflictException("An incident with the same user and time window is already created!")
+        
+        if (!incident) {
+            throw new NotFoundException(`Incident with ID: ${id} not found!`);
         }
-        try {
-            const incident = this.incidentRepository.create(createIncidentDTO);
-            const savedIncident = await this.incidentRepository.save(incident);
-            return savedIncident;
-        } catch (error) {
-            if (error.code === "23505") {
-                throw new ConflictException(`Duplicate incident. An incident with the same user, and time window already exists!`);
-            }
-            throw error;
-        }
+        
+        return this.mapToResponseDTO(incident);
     }
-
+    
     /**
      * Find a single incident by the composite key of user, windows_start and windows_end
      * @param user Username
@@ -171,6 +167,12 @@ export class IncidentService {
             if (!updatedIncident) {
                 throw new NotFoundException('Updated incident not found');
             }
+            
+            // If the time window or user was updated, update alert associations
+            if (updateIncidentDTO.windows_start || updateIncidentDTO.windows_end || updateIncidentDTO.user) {
+                await this.alertService.updateAlertsForIncident(updatedIncident);
+            }
+            
             return this.mapToResponseDTO(updatedIncident);
         } catch (error) {
             if (error.code === "23505") {
@@ -194,24 +196,38 @@ export class IncidentService {
     }
 
     /**
-     * Find all incidents with pagination and optional filtering
-     * @param user Optional user filter
+     * Find all incidents with pagination and optional filtering, including sorting
+     * @param filters Optional filters for the query
      * @param limit Number of incidents per page
      * @param offset Number of records to skip
+     * @param sortField Field to sort by
+     * @param sortOrder Sort direction (asc or desc)
      * @returns Array of incidents with total count
      */
-    async findAll(user?: string, limit = 10, offset = 0): Promise<{ incidents: IncidentResponseDTO[], total: number }> {
-        const where: FindOptionsWhere<Incident> = {};
-        if (user) {
-            where.user = user;
+    async findAll(
+        filters?: Partial<Incident>,
+        limit = 10,
+        offset = 0,
+        sortField: SortField = 'windows_start',
+        sortOrder: SortOrder = 'desc'
+    ): Promise<{ incidents: IncidentResponseDTO[], total: number }> {
+        const whereClause: FindOptionsWhere<Incident> = {};
+        if (filters) {
+            Object.keys(filters).forEach(key => {
+                if (filters[key] !== undefined) {
+                    whereClause[key] = filters[key];
+                }
+            });
         }
+
+        // Create the order object for sorting
+        const order: FindOptionsOrder<Incident> = { [sortField]: sortOrder };
+
         const [incidents, total] = await this.incidentRepository.findAndCount({
-            where,
+            where: whereClause,
+            order,
             take: limit,
-            skip: offset,
-            order: {
-                windows_start: 'DESC',
-            },
+            skip: offset
         });
         return {
             incidents: incidents.map(incident => this.mapToResponseDTO(incident)),
@@ -234,4 +250,134 @@ export class IncidentService {
         });
         return incidents.map(incident => this.mapToResponseDTO(incident));
     }
-}
+    
+    async removeById(id: string): Promise<boolean> {
+        const result = await this.incidentRepository.delete({ ID: id });
+        return result?.affected ? result.affected > 0 : false;
+    }
+    
+    /**
+     * Create a new incident
+     * @param createIncidentDTO Incident creation data
+     * @returns The created incident
+     */
+    async create(createIncidentDTO: CreateIncidentDTO): Promise<IncidentResponseDTO> {
+        const checkExistingIncident = await this.incidentRepository.findOne({
+            where: {
+                user: createIncidentDTO.user,
+                windows_start: createIncidentDTO.windows_start,
+                windows_end: createIncidentDTO.windows_end,
+            }
+        });
+        if (checkExistingIncident) {
+            throw new ConflictException("An incident with the same user and time window is already created!")
+        }
+        try {
+            // Create the incident entity
+            const incident = this.incidentRepository.create(createIncidentDTO);
+            
+            const savedIncident = await this.incidentRepository.save(incident);
+            
+            // Update all matching alerts to associate them with this incident
+            await this.alertService.updateAlertsForIncident(savedIncident);
+            
+            return this.mapToResponseDTO(savedIncident);
+        } catch (error) {
+            if (error.code === "23505") {
+                throw new ConflictException(`Duplicate incident. An incident with the same user, and time window already exists!`);
+            }
+            throw error;
+        }
+    }
+    
+    /**
+     * Update an incident by ID
+     * @param id Incident ID
+     * @param updateIncidentDTO Update data
+     * @returns The updated incident
+     */
+    async updateById(id: string, updateIncidentDTO: UpdateIncidentDTO): Promise<IncidentResponseDTO> {
+        const incident = await this.incidentRepository.findOne({
+            where: { ID: id }
+        });
+        
+        if (!incident) {
+            throw new NotFoundException(`Incident with ID: ${id} not found!`);
+        }
+        
+        try {
+            await this.incidentRepository.update(id, updateIncidentDTO);
+            
+            const updatedIncident = await this.incidentRepository.findOne({
+                where: { ID: id }
+            });
+            
+            if (!updatedIncident) {
+                throw new NotFoundException('Updated incident not found');
+            }
+            
+            // If the time window or user was updated, update alert associations
+            if (updateIncidentDTO.windows_start || updateIncidentDTO.windows_end || updateIncidentDTO.user) {
+                await this.alertService.updateAlertsForIncident(updatedIncident);
+            }
+            
+            return this.mapToResponseDTO(updatedIncident);
+        } catch (error) {
+            if (error.code === "23505") {
+                throw new ConflictException(`Duplicate incident. An incident with the same user and time window already exists!`);
+            }
+            throw error;
+        }
+    }
+    
+    /**
+     * Get alerts for an incident
+     * @param incidentId Incident ID
+     * @returns Array of alerts associated with the incident
+     */
+    async getAlertsForIncident(incidentId: string): Promise<any[]> {
+        // Verify the incident exists
+        await this.findById(incidentId);
+        
+        // Use the AlertService to find alerts by incident ID
+        return this.alertService.findAlertsByIncidentId(incidentId);
+    }
+
+    /**
+         * Search incidents by query string across multiple fields including ID
+         * @param query Search query string
+         * @param limit Number of records to return
+         * @param offset Pagination offset
+         * @param sortField Field to sort by
+         * @param sortOrder Sort direction (asc or desc)
+         * @returns Incidents matching the search query with total count
+         */
+    async searchIncidents(
+        query: string,
+        limit: number = 10,
+        offset: number = 0,
+        sortField: SortField = 'windows_start',
+        sortOrder: SortOrder = 'desc'
+    ): Promise<{ incidents: IncidentResponseDTO[]; total: number }> {
+        // Create ILike expressions for case-insensitive search
+        const searchQuery = ILike(`%${query}%`);
+        
+        // Create the order object for sorting
+        const order: FindOptionsOrder<Incident> = { [sortField]: sortOrder };
+        
+        const [incidents, total] = await this.incidentRepository.findAndCount({
+            where: [
+                { ID: searchQuery },
+                { user: searchQuery }
+            ],
+            order,
+            take: limit,
+            skip: offset,
+        });
+    
+        return { 
+            incidents: incidents.map(incident => this.mapToResponseDTO(incident)), 
+            total 
+        };
+    }
+};

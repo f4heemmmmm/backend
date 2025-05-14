@@ -1,3 +1,5 @@
+// backend/src/services/csv-monitor.service.ts
+
 import * as fs from "fs";
 import * as path from "path";
 import { ConfigService } from "@nestjs/config";
@@ -124,9 +126,11 @@ export class CSVMonitorService implements OnModuleInit {
 
                     for (const incident of incidents) {
                         try {
+                            this.logger.debug(`Creating incident: ${JSON.stringify(incident)}`);
                             const result = await this.incidentService.create(incident);
                             if (result) {
                                 processedCount++;
+                                this.logger.debug(`Successfully created incident for user ${incident.user}`);
                             } else {
                                 duplicateCount++;
                                 this.logger.debug(`Skipped duplicate incident in file ${file} for user ${incident.user}.`);
@@ -137,7 +141,9 @@ export class CSVMonitorService implements OnModuleInit {
                                 this.logger.debug(`Skipped duplicate incident in file ${file} for user ${incident.user}: ${error.message}`);
                             } else {
                                 criticalErrorCount++;
-                                this.logger.error(`Error processing incident in file ${file}: `, error);
+                                this.logger.error(`Error processing incident in file ${file}: ${error.message}`);
+                                this.logger.error(`Full error: ${JSON.stringify(error)}`);
+                                this.logger.error(`Incident data: ${JSON.stringify(incident)}`);
                             }
                         }
                     }
@@ -216,9 +222,11 @@ export class CSVMonitorService implements OnModuleInit {
                     
                     for (const alert of alerts) {
                         try {
+                            this.logger.debug(`Creating alert: ${JSON.stringify(alert)}`);
                             const result = await this.alertService.create(alert);
                             if (result) {
                                 processedCount++;
+                                this.logger.debug(`Successfully created alert for user ${alert.user} with name ${alert.alert_name}`);
                             } else {
                                 duplicateCount++;
                                 this.logger.debug(`Skipped duplicate alert in file: ${file}!`);
@@ -230,7 +238,9 @@ export class CSVMonitorService implements OnModuleInit {
                                 this.logger.debug(`Skipped duplicate alert in file ${file}: ${error.message}`);
                             } else {
                                 criticalErrorCount++;
-                                this.logger.error(`Error processing alert in file ${file}:`, error);
+                                this.logger.error(`Error processing alert in file ${file}: ${error.message}`);
+                                this.logger.error(`Full error: ${JSON.stringify(error)}`);
+                                this.logger.error(`Alert data: ${JSON.stringify(alert)}`);
                             }
                         }
                     }

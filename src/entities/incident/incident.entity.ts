@@ -1,9 +1,11 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index  } from "typeorm";
+// incident.entity.ts (updated)
+import { Entity, Column, PrimaryColumn, Index, BeforeInsert, BeforeUpdate } from "typeorm";
+import { createHash } from "crypto";
 
 @Entity("incident")
 @Index(["user", "windows_start", "windows_end"], { unique: true })
 export class Incident {
-    @PrimaryGeneratedColumn("uuid")
+    @PrimaryColumn()
     ID: string;
 
     @Column()
@@ -26,4 +28,12 @@ export class Incident {
 
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP" })
     updated_at: Date;
+
+    @BeforeInsert()
+    @BeforeUpdate()
+    generateId() {
+        // Create a hash using the composite key fields
+        const hashInput = `${this.user}|${this.windows_start.toISOString()}|${this.windows_end.toISOString()}`;
+        this.ID = createHash('sha256').update(hashInput).digest('hex');
+    }
 }

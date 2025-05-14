@@ -1,9 +1,12 @@
+// REFACTOR
+
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseDatePipe, HttpStatus, HttpCode, ParseBoolPipe } from "@nestjs/common";
 
 // Alert Files Import
 import { Alert } from "./alert.entity";
 import { AlertService } from "./alert.service";
 import { CreateAlertDTO, UpdateAlertDTO, AlertResponseDTO } from "./alert.dto";
+import { IncidentResponseDTO } from "../incident/incident.dto";
 
 // Define types for sorting to match the service
 type SortField = 'datestr' | 'score' | 'alert_name';
@@ -53,51 +56,99 @@ export class AlertController {
         );
     }
 
+     /**
+     * Search alerts by query string across multiple fields
+     * @param query Search query string
+     * @param limit Number of records to return
+     * @param offset Pagination offset
+     * @param sortField Field to sort by
+     * @param sortOrder Sort direction (asc or desc)
+     * @returns Alerts matching the search query with total count
+     */
+     @Get('search')
+     async searchAlerts(
+         @Query('query') query: string,
+         @Query('limit') limit?: number,
+         @Query('offset') offset?: number,
+         @Query('sortField') sortField?: string,
+         @Query('sortOrder') sortOrder?: string,
+     ): Promise<{ alerts: AlertResponseDTO[]; total: number }> {
+         return this.alertService.searchAlerts(
+             query,
+             limit ? Number(limit) : 10,
+             offset ? Number(offset) : 0,
+             this.validateSortField(sortField),
+             this.validateSortOrder(sortOrder)
+         );
+     }
+
     /**
-     * Find a single alert by the composite key
-     * @param user Username
-     * @param datestr Alert date
-     * @param alertName Alert name
+     * Find a single alert by ID
+     * @param id Alert ID
      * @returns The found alert
      */
-    @Get(":user/:datestr/:alertName")
-    async findOne(@Param("user") user: string, @Param("datestr", new ParseDatePipe()) datestr: Date, @Param("alertName") alertName: string): Promise<AlertResponseDTO> {
-        return this.alertService.findOne(user, datestr, alertName);
+    @Get(":id")
+    async findById(@Param("id") id: string): Promise<AlertResponseDTO> {
+        return this.alertService.findById(id);
     }
 
     /**
-     * Update an existing alert by the composite key 
-     * @param user Username
-     * @param datestr Alert date
-     * @param alertName Alert name
+     * Get the incident associated with an alert
+     * @param alertId Alert ID to find the related incident for
+     * @returns The associated incident or null
+     */
+    @Get(':alertId/incident')
+    async getIncidentForAlert(
+        @Param('alertId') alertId: string
+    ): Promise<IncidentResponseDTO | null> {
+        return this.alertService.getIncidentForAlert(alertId);
+    }
+
+    /**
+     * Find alerts by incident ID
+     * @param incidentId Incident ID to search for
+     * @param sortField Field to sort by
+     * @param sortOrder Sort direction (asc or desc)
+     * @returns Array of alerts associated with the specified incident
+     */
+    @Get('incident-id/:incidentId')
+    async findAlertsByIncidentId(
+        @Param('incidentId') incidentId: string,
+        @Query("sortField") sortField?: string,
+        @Query("sortOrder") sortOrder?: string,
+    ): Promise<AlertResponseDTO[]> {
+        return this.alertService.findAlertsByIncidentId(
+            incidentId,
+            this.validateSortField(sortField),
+            this.validateSortOrder(sortOrder)
+        );
+    }
+
+    /**
+     * Update an existing alert by ID 
+     * @param id Alert ID
      * @param updateAlertDTO Alert update data
      * @returns The updated alert
      */
-    @Put()
-    async update(
-        @Param("user") user: string,
-        @Param("datestr", new ParseDatePipe()) datestr: Date,
-        @Param("alertName") alertName: string,
+    @Put(':id')
+    async updateById(
+        @Param("id") id: string,
         @Body() updateAlertDTO: UpdateAlertDTO
     ): Promise<AlertResponseDTO> {
-        return this.alertService.update(user, datestr, alertName, updateAlertDTO);
+        return this.alertService.updateById(id, updateAlertDTO);
     }
 
     /**
-     * Remove an alert by the composite key
-     * @param user Username
-     * @param datestr Alert date
-     * @param alertName Alert name
+     * Remove an alert by ID
+     * @param id Alert ID
      * @returns Void
      */
-    @Delete()
+    @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
-    async remove(
-        @Param("user") user: string,
-        @Param("datestr", new ParseDatePipe()) datestr: Date,
-        @Param("alertName") alertName: string
+    async removeById(
+        @Param("id") id: string
     ): Promise<void> {
-        await this.alertService.remove(user, datestr, alertName);
+        await this.alertService.removeById(id);
     }
 
     /**
@@ -206,31 +257,7 @@ export class AlertController {
         );
     }
 
-    /**
-     * Search alerts by query string across multiple fields
-     * @param query Search query string
-     * @param limit Number of records to return
-     * @param offset Pagination offset
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Alerts matching the search query with total count
-     */
-    @Get('search')
-    async searchAlerts(
-        @Query('query') query: string,
-        @Query('limit') limit?: number,
-        @Query('offset') offset?: number,
-        @Query('sortField') sortField?: string,
-        @Query('sortOrder') sortOrder?: string,
-    ): Promise<{ alerts: AlertResponseDTO[]; total: number }> {
-        return this.alertService.searchAlerts(
-            query,
-            limit ? Number(limit) : 10,
-            offset ? Number(offset) : 0,
-            this.validateSortField(sortField),
-            this.validateSortOrder(sortOrder)
-        );
-    }
+   
 
     /**
      * Validate and convert sort field string to SortField type
@@ -253,5 +280,13 @@ export class AlertController {
         return (sortOrder && (sortOrder === 'asc' || sortOrder === 'desc')) 
             ? sortOrder as SortOrder 
             : 'desc';
+    }
+
+    @Put(':alertId/associate/:incidentId')
+    async associateWithIncident(
+        @Param('alertId') alertId: string,
+        @Param('incidentId') incidentId: string
+    ): Promise<AlertResponseDTO> {
+        return this.alertService.associateWithIncident(alertId, incidentId);
     }
 }

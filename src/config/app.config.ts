@@ -1,3 +1,4 @@
+// backend/src/config/app.config.ts:
 import * as path from "path";
 import { registerAs } from "@nestjs/config";
 
@@ -5,7 +6,8 @@ import { registerAs } from "@nestjs/config";
 import { Alert } from "src/entities/alert/alert.entity";
 import { Incident } from "src/entities/incident/incident.entity";
 
-const storagePath = path.join(__dirname, "../../storage");
+// Default storage path as fallback
+const defaultStoragePath = path.join(__dirname, "../../storage");
 
 export default registerAs("config", () => ({
     database: {
@@ -24,12 +26,12 @@ export default registerAs("config", () => ({
     },
     storage: {
         csv: {
-            dropPath: path.join(storagePath, "csv/drop"),
-            processedPath: path.join(storagePath, "csv/processed"),
-            errorPath: path.join(storagePath, "csv/error")
+            dropPath: process.env.CSV_DROP_PATH || path.join(defaultStoragePath, "csv/drop"),
+            processedPath: process.env.CSV_PROCESSED_PATH || path.join(defaultStoragePath, "csv/processed"),
+            errorPath: process.env.CSV_ERROR_PATH || path.join(defaultStoragePath, "csv/error")
         }
     },
     monitoring: {
-        interval: 5000
+        interval: parseInt(process.env.CSV_MONITOR_INTERVAL || "5000")
     }
 }));
