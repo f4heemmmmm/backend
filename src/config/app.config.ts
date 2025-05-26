@@ -1,12 +1,14 @@
-// backend/src/config/app.config.ts:
+// backend/src/config/app.config.ts
+
 import * as path from "path";
 import { registerAs } from "@nestjs/config";
-
-// Entity Import
 import { Alert } from "src/entities/alert/alert.entity";
 import { Incident } from "src/entities/incident/incident.entity";
 
-// Default storage path as fallback
+/**
+ * Application configuration factory that provides database, storage, and monitoring settings
+ * Uses environment variables with sensible defaults for development
+ */
 const defaultStoragePath = path.join(__dirname, "../../storage");
 
 export default registerAs("config", () => ({
@@ -18,11 +20,11 @@ export default registerAs("config", () => ({
         username: process.env.DATABASE_USERNAME || "postgres",
         password: process.env.DATABASE_PASSWORD || "postgres",
         entities: [Alert, Incident],
-        migrations: [__dirname + '/../migrations/*.ts'],
+        migrations: [__dirname + "/../migrations/*.ts"],
         migrationsTableName: "migrations",
         synchronize: process.env.NODE_ENV !== "production",
         logging: process.env.NODE_ENV !== "production",
-        ssl: false
+        ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
     },
     storage: {
         csv: {
@@ -33,5 +35,9 @@ export default registerAs("config", () => ({
     },
     monitoring: {
         interval: parseInt(process.env.CSV_MONITOR_INTERVAL || "5000")
+    },
+    server: {
+        port: parseInt(process.env.PORT || "3000"),
+        environment: process.env.NODE_ENV || "development"
     }
 }));

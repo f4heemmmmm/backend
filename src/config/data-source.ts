@@ -1,11 +1,14 @@
-// backend/src/config/data-source.ts:
+// backend/src/config/data-source.ts
+
 import "reflect-metadata";
 import { DataSource } from "typeorm";
-
-// Entity Import
 import { Alert } from "src/entities/alert/alert.entity";
 import { Incident } from "src/entities/incident/incident.entity";
 
+/**
+ * Application data source configuration for TypeORM
+ * Configures PostgreSQL database connection and entity management
+ */
 export const AppDataSource = new DataSource({
     type: "postgres",
     host: process.env.DATABASE_HOST || "localhost",
@@ -14,7 +17,7 @@ export const AppDataSource = new DataSource({
     username: process.env.DATABASE_USERNAME || "postgres",
     password: process.env.DATABASE_PASSWORD || "postgres",
     entities: [Alert, Incident],
-    migrations: [__dirname + '/../migrations/*.ts'],
+    migrations: [__dirname + "/../migrations/*.ts"],
     migrationsTableName: "migrations",
     synchronize: process.env.NODE_ENV !== "production",
     logging: process.env.NODE_ENV !== "production",

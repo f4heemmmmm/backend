@@ -1,5 +1,11 @@
+// backend/src/entities/alert/alert.dto.ts
+
 import { IsString, IsNumber, IsDateString, IsObject, IsBoolean, IsOptional } from "class-validator";
 
+/**
+ * Data Transfer Object for creating new alert records
+ * Contains all required fields and validation rules for alert creation
+ */
 export class CreateAlertDTO {
     @IsString()
     user: string;
@@ -36,9 +42,13 @@ export class CreateAlertDTO {
     
     @IsString()
     @IsOptional()
-    incidentId?: string;
+    incidentID?: string;
 }
 
+/**
+ * Data Transfer Object for updating existing alert records
+ * All fields are optional to allow partial updates of alert data
+ */
 export class UpdateAlertDTO {
     @IsString()
     @IsOptional()
@@ -86,9 +96,13 @@ export class UpdateAlertDTO {
     
     @IsString()
     @IsOptional()
-    incidentId?: string;
+    incidentID?: string;
 }
 
+/**
+ * Data Transfer Object for alert response data
+ * Represents the structure of alert data returned by API endpoints
+ */
 export class AlertResponseDTO {
     ID: string;
     user: string;
@@ -102,7 +116,7 @@ export class AlertResponseDTO {
     Detection_model: string;
     Description: string;
     isUnderIncident: boolean;
-    incidentId?: string;
+    incidentID?: string;
     created_at: Date;
     updated_at: Date;
 }

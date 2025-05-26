@@ -1,71 +1,93 @@
+// backend/src/entities/alert/alert.service.ts
+
+import { Alert } from "./alert.entity";
 import { InjectRepository } from "@nestjs/typeorm";
+import { Incident } from "../incident/incident.entity";
+import { IncidentService } from "../incident/incident.service";
+import { IncidentResponseDTO } from "../incident/incident.dto";
+import { CreateAlertDTO, UpdateAlertDTO, AlertResponseDTO } from "./alert.dto";
 import { Repository, FindOptionsWhere, Between, ILike, FindOptionsOrder } from "typeorm";
 import { Injectable, NotFoundException, ConflictException, Inject, forwardRef } from "@nestjs/common";
 
-// Alert Files Import
-import { Alert } from "./alert.entity";
-import { CreateAlertDTO, UpdateAlertDTO, AlertResponseDTO } from "./alert.dto";
-import { IncidentService } from "../incident/incident.service";
-import { IncidentResponseDTO } from "../incident/incident.dto";
-import { Incident } from "../incident/incident.entity";
-
-// Define types for sorting
-type SortField = 'datestr' | 'score' | 'alert_name';
-type SortOrder = 'asc' | 'desc';
+type SortOrder = "asc" | "desc";
+type SortField = "datestr" | "score" | "alert_name";
 
 @Injectable()
 export class AlertService {
-    constructor(
+    constructor (
         @InjectRepository(Alert)
         private readonly alertRepository: Repository<Alert>,
+        @Inject(forwardRef(() => IncidentService))
         private readonly incidentService: IncidentService
     ) {}
 
+    /**
+     * Maps an Alert entity to AlertResponseDTO format for API responses
+     * @param alert - Alert entity from the database
+     * @returns AlertResponseDTO object with properly formatted data
+     */
     private mapToResponseDTO(alert: Alert): AlertResponseDTO {
         return {
             ID: alert.ID,
             user: alert.user,
             datestr: alert.datestr,
             evidence: alert.evidence,
-            score: alert.score,
             alert_name: alert.alert_name,
+            score: alert.score,
             MITRE_tactic: alert.MITRE_tactic,
             MITRE_technique: alert.MITRE_technique,
             Logs: alert.Logs,
             Detection_model: alert.Detection_model,
-            Description: alert.Description,
             isUnderIncident: alert.isUnderIncident,
-            incidentId: alert.incidentId,
+            Description: alert.Description,
+            incidentID: alert.incidentID,
             created_at: alert.created_at,
             updated_at: alert.updated_at
         };
     }
 
     /**
-     * Create a new alert
-     * @param createAlertDTO Alert creation data
-     * @returns The created alert
+     * Finds an incident that matches the alert's user and time window
+     * @param alert - Alert entity to find matching incident for
+     * @returns Promise resolving to incident ID if match found, undefined otherwise
      */
-    // alert.service.ts (partial update for create method)
+    async findMatchingIncidentForAlert(alert: Alert): Promise<string | undefined> {
+        try {
+            const incidents = await this.incidentService.findIncidentsByUser(alert.user);
+
+            const matchingIncident = incidents.find(incident => 
+                alert.datestr >= new Date(incident.windows_start) &&
+                alert.datestr <= new Date(incident.windows_end)
+            );
+            return matchingIncident ? matchingIncident.ID : undefined;
+        } catch (error) {
+            console.error("Error finding matching incident:", error);
+            return undefined;
+        }
+    }
+
+    /**
+     * Creates a new alert record in the database with automatic incident association
+     * @param createAlertDTO - Data transfer object containing alert creation data
+     * @returns Promise resolving to the created alert in response DTO format
+     */
     async create(createAlertDTO: CreateAlertDTO): Promise<AlertResponseDTO> {
         const checkExistingAlert = await this.alertRepository.findOne({
             where: {
                 user: createAlertDTO.user,
                 datestr: createAlertDTO.datestr,
-                alert_name: createAlertDTO.alert_name,
+                alert_name: createAlertDTO.alert_name
             }
         });
         if (checkExistingAlert) {
-            throw new ConflictException("An alert with the same user, date and alert name is already created!")
+            throw new ConflictException("An alert with the same user, date and alert name already exists!");
         }
         try {
-            // Create the alert entity
             const alert = this.alertRepository.create(createAlertDTO);
-            
-            // Find matching incident based on username and time window
-            const matchingIncidentId = await this.findMatchingIncidentForAlert(alert);
-            if (matchingIncidentId) {
-                alert.incidentId = matchingIncidentId;
+
+            const matchingIncidentID = await this.findMatchingIncidentForAlert(alert);
+            if (matchingIncidentID) {
+                alert.incidentID = matchingIncidentID;
                 alert.isUnderIncident = true;
             }
             
@@ -73,27 +95,22 @@ export class AlertService {
             return this.mapToResponseDTO(savedAlert);
         } catch (error) {
             if (error.code === "23505") {
-                throw new ConflictException(`Duplicate alert. An alert with the same user, date and alert name already exists!`);
+                throw new ConflictException("Duplicate alert. An alert with the same user, date and alert name already exists!");
             }
             throw error;
         }
     }
+
     /**
-     * Get all alerts with optional filtering
-     * @param filters Optional filters for the query
-     * @param limit Number of alerts per page
-     * @param offset Number of records to skip
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Paginated array of alerts
+     * Retrieves alerts with optional filtering, pagination, and sorting
+     * @param filters - Optional filter criteria to apply to the query
+     * @param limit - Maximum number of alerts to return (default: 10)
+     * @param offset - Number of alerts to skip for pagination (default: 0)
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to paginated alerts with total count
      */
-    async findAll(
-        filters?: Partial<Alert>,
-        limit = 10,
-        offset = 0,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
-    ): Promise<{ alerts: AlertResponseDTO[], total: number }> {
+    async findAll(filters?: Partial<Alert>, limit = 10, offset = 0, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<{ alerts: AlertResponseDTO[], total: number }> {
         const whereClause: FindOptionsWhere<Alert> = {};
         if (filters) {
             Object.keys(filters).forEach(key => {
@@ -103,9 +120,7 @@ export class AlertService {
             });
         }
 
-        // Create the order object for sorting
         const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
         const [alerts, total] = await this.alertRepository.findAndCount({
             where: whereClause,
             order,
@@ -119,20 +134,168 @@ export class AlertService {
     }
 
     /**
-     * Find alerts by their date range
-     * @param startDate Start date for the range
-     * @param endDate End date for the range
-     * @param user Optional user filter
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Array of alerts within the date range
+     * Searches alerts using a query string across multiple fields
+     * @param query - Search term to match against alert fields
+     * @param limit - Maximum number of search results to return (default: 10)
+     * @param offset - Number of results to skip for pagination (default: 0)
+     * @param sortField - Field to sort search results by (default: "datestr")
+     * @param sortOrder - Sort direction for search results (default: "desc")
+     * @returns Promise resolving to matching alerts with total count
+     */
+    async searchAlerts(query: string, limit: number = 10, offset: number = 0, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<{ alerts: AlertResponseDTO[]; total: number }> {
+        const searchQuery = ILike(`%${query}%`);
+
+        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
+        const [alerts, total] = await this.alertRepository.findAndCount({
+            where: [
+                { ID: searchQuery },
+                { alert_name: searchQuery },
+                { user: searchQuery },
+                { MITRE_tactic: searchQuery },
+                { MITRE_technique: searchQuery },
+                { Description: searchQuery },
+                { Detection_model: searchQuery },
+            ],
+            order,
+            take: limit,
+            skip: offset,
+        });
+        return {
+            alerts: alerts.map(alert => this.mapToResponseDTO(alert)),
+            total
+        }
+    }
+
+    /**
+     * Retrieves a specific alert using its unique identifier
+     * @param id - Unique identifier of the alert to retrieve
+     * @returns Promise resolving to the alert in response DTO format
+     */
+    async findAlertByID(id: string): Promise<AlertResponseDTO> {
+        const alert = await this.alertRepository.findOne({
+            where: {
+                ID: id
+            }
+        });
+        if (!alert) {
+            throw new NotFoundException(`Unable to find alert with ID: ${id}`);
+        }
+        return this.mapToResponseDTO(alert);
+    }
+
+    /**
+     * Retrieves the incident associated with a specific alert
+     * @param alertID - Unique identifier of the alert to find the incident for
+     * @returns Promise resolving to the associated incident or null if none exists
+     */
+    async getIncidentForAlert(alertID: string): Promise<IncidentResponseDTO | null> {
+        const alert = await this.alertRepository.findOne({
+            where: {
+                ID: alertID
+            }
+        });
+        if (!alert || !alert.isUnderIncident || !alert.incidentID) {
+            return null;
+        }
+        try {
+            return await this.incidentService.findIncidentByID(alert.incidentID);
+        } catch (error) {
+            throw new NotFoundException(`Unable to find incident related to the alert!`);
+        }
+    }
+    
+    /**
+     * Retrieves all alerts associated with a specific incident
+     * @param incidentID - Unique identifier of the incident to find alerts for
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to array of alerts associated with the incident
+     */
+    async findAlertsByIncidentID(incidentID: string, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
+        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
+        const alerts = await this.alertRepository.find({
+            where: {
+                incidentID,
+                isUnderIncident: true
+            },
+            order
+        });
+        return alerts.map(alert => this.mapToResponseDTO(alert));
+    }
+
+    /**
+     * Updates an existing alert with new data and handles incident association
+     * @param id - Unique identifier of the alert to update
+     * @param updateAlertDTO - Data transfer object containing updated alert information
+     * @returns Promise resolving to the updated alert in response DTO format
+     */
+    async updateAlertByID(id: string, updateAlertDTO: UpdateAlertDTO): Promise<AlertResponseDTO> {
+        const existingAlert = await this.alertRepository.findOne({
+            where: {
+                ID: id
+            }
+        });
+        if (!existingAlert) {
+            throw new NotFoundException(`Unable to find alert with ID: ${id}`);
+        }
+        try {
+            await this.alertRepository.update(id, updateAlertDTO);
+
+            const updatedAlert = await this.alertRepository.findOne({
+                where: {
+                    ID: id
+                }
+            });
+            if (!updatedAlert) {
+                throw new NotFoundException("Updated alert not found!");
+            }
+
+            if (updateAlertDTO.datestr || updateAlertDTO.user) {
+                const matchingIncidentID = await this.findMatchingIncidentForAlert(updatedAlert);
+                if (matchingIncidentID) {
+                    updatedAlert.incidentID = matchingIncidentID;
+                    updatedAlert.isUnderIncident = true;
+                    await this.alertRepository.save(updatedAlert);
+                } else if (updatedAlert.isUnderIncident) {
+                    updatedAlert.incidentID = "";
+                    updatedAlert.isUnderIncident = false;
+                    await this.alertRepository.save(updatedAlert);
+                }
+            }
+            return this.mapToResponseDTO(updatedAlert);
+        } catch (error) {
+            if (error.code === "23505") {
+                throw new ConflictException("An alert with the same user, date and alert name already exists!");
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Permanently removes an alert from the database
+     * @param id - Unique identifier of the alert to delete
+     * @returns Promise resolving to boolean indicating success of deletion
+     */
+    async removeAlertByID(id: string): Promise<boolean> {
+        const result = await this.alertRepository.delete({ ID: id });
+        return result?.affected ? result.affected > 0 : false;
+    }
+
+    /**
+     * Retrieves alerts that occurred within a specified date range
+     * @param startDate - Beginning date of the range to filter alerts
+     * @param endDate - End date of the range to filter alerts
+     * @param user - Optional user filter to narrow results to specific user
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to array of alerts within the date range
      */
     async findAlertsByDateRange(
-        startDate: Date, 
-        endDate: Date, 
+        startDate: Date,
+        endDate: Date,
         user?: string,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
+        sortField: SortField = "datestr", 
+        sortOrder: SortOrder = "desc"
     ): Promise<AlertResponseDTO[]> {
         const whereClause: FindOptionsWhere<Alert> = {
             datestr: Between(startDate, endDate)
@@ -140,10 +303,7 @@ export class AlertService {
         if (user) {
             whereClause.user = user;
         }
-
-        // Create the order object for sorting
         const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
         const alerts = await this.alertRepository.find({
             where: whereClause,
             order
@@ -152,25 +312,17 @@ export class AlertService {
     }
 
     /**
-     * Find alerts by score range
-     * @param minScore Minimum score
-     * @param maxScore Maximum score
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Array of alerts within the score range
+     * Retrieves all alerts associated with a specific MITRE ATT&CK tactic
+     * @param tactic - MITRE tactic identifier to filter alerts by
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to array of alerts associated with the tactic
      */
-    async findAlertsByScoreRange(
-        minScore: number, 
-        maxScore: number,
-        sortField: SortField = 'score',
-        sortOrder: SortOrder = 'desc'
-    ) {
-        // Create the order object for sorting
+    async findAlertsByMITRETactic(tactic: string, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
         const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
         const alerts = await this.alertRepository.find({
             where: {
-                score: Between(minScore, maxScore)
+                MITRE_tactic: tactic,
             },
             order
         });
@@ -178,112 +330,17 @@ export class AlertService {
     }
 
     /**
-     * Find alerts by MITRE tactic
-     * @param tactic MITRE tactic to search for
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Array of alerts with the specified MITRE tactic
+     * Retrieves all alerts associated with a specific MITRE ATT&CK technique
+     * @param technique - MITRE technique identifier to filter alerts by
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to array of alerts associated with the technique
      */
-    async findAlertsByMITRETactic(
-        tactic: string,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
-    ): Promise<AlertResponseDTO[]> {
-        // Create the order object for sorting
+    async findAlertsByMITRETechnique(technique: string, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
         const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
         const alerts = await this.alertRepository.find({
-            where: { MITRE_tactic: tactic },
-            order
-        });
-        return alerts.map(alert => this.mapToResponseDTO(alert));
-    }
-
-    /**
-     * Find alerts by MITRE technique
-     * @param technique MITRE technique to search for
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Array of alerts with the specified MITRE technique
-     */
-    async findAlertsByMITRETechnique(
-        technique: string,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
-    ): Promise<AlertResponseDTO[]> {
-        // Create the order object for sorting
-        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
-        const alerts = await this.alertRepository.find({
-            where: { MITRE_technique: technique },
-            order
-        });
-        return alerts.map(alert => this.mapToResponseDTO(alert));
-    }
-
-    /**
-     * Find alerts by user
-     * @param user Username to search for
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Array of alerts under the specified user
-     */
-    async findAlertsByUser(
-        user: string,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
-    ): Promise<AlertResponseDTO[]> {
-        // Create the order object for sorting
-        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
-        const alerts = await this.alertRepository.find({
-            where: { user },
-            order
-        });
-        return alerts.map(alert => this.mapToResponseDTO(alert));
-    }
-
-    /**
-     * Find alerts that are under an incident
-     * @param isUnderIncident Whether the alert is under an incident
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Array of alerts that are under an incident
-     */
-    async findAlertsUnderIncident(
-        isUnderIncident: boolean,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
-    ): Promise<AlertResponseDTO[]> {
-        // Create the order object for sorting
-        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
-        const alerts = await this.alertRepository.find({
-            where: { isUnderIncident },
-            order
-        });
-        return alerts.map(alert => this.mapToResponseDTO(alert));
-    }
-
-    /**
-     * Find alerts by incident ID
-     * @param incidentId Incident ID to search for
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Array of alerts associated with the specified incident
-     */
-    async findAlertsByIncidentId(
-        incidentId: string,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
-    ): Promise<AlertResponseDTO[]> {
-        // Create the order object for sorting
-        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-
-        const alerts = await this.alertRepository.find({
-            where: { 
-                incidentId,
-                isUnderIncident: true 
+            where: {
+                MITRE_technique: technique,
             },
             order
         });
@@ -291,33 +348,47 @@ export class AlertService {
     }
 
     /**
-     * Get the incident associated with an alert
-     * @param alertId Alert ID to find the related incident for
-     * @returns The associated incident or null if no incident is associated
+     * Retrieves all alerts associated with a specific user
+     * @param user - Username or user identifier to filter alerts by
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to array of alerts belonging to the user
      */
-    async getIncidentForAlert(alertId: string): Promise<IncidentResponseDTO | null> {
-        const alert = await this.alertRepository.findOne({
-            where: { ID: alertId }
+    async findAlertsByUser(user: string, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
+        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
+        const alerts = await this.alertRepository.find({
+            where: {
+                user,
+            },
+            order
         });
-        
-        if (!alert || !alert.isUnderIncident || !alert.incidentId) {
-            return null;
-        }
-        
-        try {
-            return await this.incidentService.findById(alert.incidentId);
-        } catch (error) {
-            // Handle case where incident doesn't exist
-            return null;
-        }
+        return alerts.map(alert => this.mapToResponseDTO(alert));
     }
 
     /**
-     * Find a single alert by the composite key of user, datestr and alert_name
-     * @param user Username
-     * @param datestr Alert date
-     * @param alert_name Alert name
-     * @return A single alert belonging to the user with the specified date and alert name (or throw NotFoundException)
+     * Retrieves alerts based on their incident association status
+     * @param isUnderIncident - Boolean flag indicating whether to fetch alerts under incidents
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to array of alerts based on incident association
+     */
+    async findAlertsUnderIncident(isUnderIncident: boolean, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
+        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
+        const alerts = await this.alertRepository.find({
+            where: {
+                isUnderIncident,
+            },
+            order
+        });
+        return alerts.map(alert => this.mapToResponseDTO(alert));
+    }
+
+    /**
+     * Retrieves a specific alert using composite key fields
+     * @param user - Username associated with the alert
+     * @param datestr - Date string of the alert occurrence
+     * @param alertName - Name of the alert
+     * @returns Promise resolving to the alert in response DTO format
      */
     async findOne(user: string, datestr: Date, alertName: string): Promise<AlertResponseDTO> {
         const alert = await this.alertRepository.findOne({
@@ -334,29 +405,12 @@ export class AlertService {
     }
 
     /**
-     * Find an alert by its ID
-     * @param id Alert ID
-     * @returns The alert with the specified ID
-     */
-    async findById(id: string): Promise<AlertResponseDTO> {
-        const alert = await this.alertRepository.findOne({
-            where: { ID: id }
-        });
-        
-        if (!alert) {
-            throw new NotFoundException(`Alert with ID: ${id} not found!`);
-        }
-        
-        return this.mapToResponseDTO(alert);
-    }
-
-    /**
-     * Update an existing alert by the composite key of user, datestr and alert_name
-     * @param user Username
-     * @param datestr Alert date
-     * @param alert_name Alert name
-     * @param updateAlertDTO Alert update data
-     * @returns The updated alert
+     * Updates an alert using composite key fields instead of ID
+     * @param user - Username associated with the alert
+     * @param datestr - Date string of the alert occurrence
+     * @param alertName - Name of the alert
+     * @param updateAlertDTO - Data transfer object containing updated alert information
+     * @returns Promise resolving to the updated alert in response DTO format
      */
     async update(user: string, datestr: Date, alertName: string, updateAlertDTO: UpdateAlertDTO): Promise<AlertResponseDTO> {
         const existingAlert = await this.findOne(user, datestr, alertName);
@@ -371,182 +425,79 @@ export class AlertService {
             return this.findOne(user, datestr, alertName);
         } catch (error) {
             if (error.code === "23505") {
-                throw new ConflictException(`Duplicate alert. An alert with the same user, date and alert name already exists!`);
+                throw new ConflictException("Duplicate alert. An alert with the same user, date and alert name already exists!");
             }
             throw error;
         }
     }
 
     /**
-     * Remove an alert by the composite key of user, datestr and alert_name
-     * @param user Username
-     * @param datestr Alert date
-     * @param alert_name Alert name
-     * @returns True if successful (False, vice versa)
+     * Updates alert-incident associations when an incident is modified
+     * @param incident - Incident entity that was updated
+     * @returns Promise that resolves when all alert associations are updated
      */
-    async remove(user: string, datestr: Date, alertName: string): Promise<boolean> {
-        const alert = await this.findOne(user, datestr, alertName);
-        const result = await this.alertRepository.delete(alert.ID);
-        return result?.affected ? result.affected > 0 : false;
-    }
+    async updateAlertsForIncident(incident: Incident): Promise<void> {
+        const userAlerts = await this.findAlertsByUser(incident.user);
 
-    /**
-     * Search alerts by query string across multiple fields including ID
-     * @param query Search query string
-     * @param limit Number of records to return
-     * @param offset Pagination offset
-     * @param sortField Field to sort by
-     * @param sortOrder Sort direction (asc or desc)
-     * @returns Alerts matching the search query with total count
-     */
-    async searchAlerts(
-        query: string,
-        limit: number = 10,
-        offset: number = 0,
-        sortField: SortField = 'datestr',
-        sortOrder: SortOrder = 'desc'
-    ): Promise<{ alerts: AlertResponseDTO[]; total: number }> {
-        // Create ILike expressions for case-insensitive search
-        const searchQuery = ILike(`%${query}%`);
-        
-        // Create the order object for sorting
-        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
-          
-        const [alerts, total] = await this.alertRepository.findAndCount({
-            where: [
-                { ID: searchQuery },
-                { alert_name: searchQuery },
-                { user: searchQuery },
-                { MITRE_tactic: searchQuery },
-                { MITRE_technique: searchQuery },
-                { Description: searchQuery },
-                { Detection_model: searchQuery }
-            ],
-            order,
-            take: limit,
-            skip: offset,
-        });
-      
-        return { 
-            alerts: alerts.map(alert => this.mapToResponseDTO(alert)), 
-            total 
-        };
-    }
+        for (const alert of userAlerts) {
+            const alertDate = new Date(alert.datestr);
+            const incidentStart = new Date(incident.windows_start);
+            const incidentEnd = new Date(incident.windows_end);
 
-    async associateWithIncident(alertId: string, incidentId: string): Promise<AlertResponseDTO> {
-        const alert = await this.alertRepository.findOne({
-            where: { ID: alertId }
-        });
-        
-        if (!alert) {
-            throw new NotFoundException(`Alert with ID: ${alertId} not found!`);
-        }
-        
-        // Update the alert to be associated with the incident
-        alert.isUnderIncident = true;
-        alert.incidentId = incidentId;
-        
-        await this.alertRepository.save(alert);
-        return this.mapToResponseDTO(alert);
-    }
-
-    async updateById(id: string, updateAlertDTO: UpdateAlertDTO): Promise<AlertResponseDTO> {
-        const existingAlert = await this.alertRepository.findOne({
-            where: { ID: id }
-        });
-        
-        if (!existingAlert) {
-            throw new NotFoundException(`Alert with ID: ${id} not found!`);
-        }
-        
-        try {
-            // Update the alert
-            await this.alertRepository.update(id, updateAlertDTO);
-            
-            // Fetch the updated alert
-            const updatedAlert = await this.alertRepository.findOne({
-                where: { ID: id }
-            });
-            
-            if (!updatedAlert) {
-                throw new NotFoundException(`Updated alert not found!`);
-            }
-            
-            // If date or user was updated, check if it now matches with an incident
-            if (updateAlertDTO.datestr || updateAlertDTO.user) {
-                const matchingIncidentId = await this.findMatchingIncidentForAlert(updatedAlert);
-                if (matchingIncidentId) {
-                    updatedAlert.incidentId = matchingIncidentId;
-                    updatedAlert.isUnderIncident = true;
-                    await this.alertRepository.save(updatedAlert);
-                } else if (updatedAlert.isUnderIncident) {
-                    // If it was previously associated but now doesn't match any incident
-                    updatedAlert.incidentId = ''; // Use empty string instead of null
-                    updatedAlert.isUnderIncident = false;
-                    await this.alertRepository.save(updatedAlert);
+            if (alertDate >= incidentStart && alertDate <= incidentEnd) {
+                if (!alert.isUnderIncident || alert.incidentID !== incident.ID) {
+                    await this.alertRepository.update(alert.ID, {
+                        isUnderIncident: true,
+                        incidentID: incident.ID
+                    });
                 }
-            }
-            
-            return this.mapToResponseDTO(updatedAlert);
-        } catch (error) {
-            if (error.code === "23505") {
-                throw new ConflictException(`Duplicate alert. An alert with the same user, date and alert name already exists!`);
-            }
-            throw error;
-        }
-    }
-    
-    async removeById(id: string): Promise<boolean> {
-        const result = await this.alertRepository.delete({ID: id});
-        return result?.affected ? result.affected > 0 : false;
-    }
-
-    // In the findMatchingIncidentForAlert method:
-async findMatchingIncidentForAlert(alert: Alert): Promise<string | undefined> {
-    try {
-        // Query incidents by username
-        const incidents = await this.incidentService.findIncidentsByUser(alert.user);
-        
-        // Find an incident whose time window contains the alert's datestr
-        const matchingIncident = incidents.find(incident => 
-            alert.datestr >= new Date(incident.windows_start) && 
-            alert.datestr <= new Date(incident.windows_end)
-        );
-        
-        return matchingIncident ? matchingIncident.ID : undefined;
-    } catch (error) {
-        console.error('Error finding matching incident:', error);
-        return undefined;
-    }
-}
-
-async updateAlertsForIncident(incident: Incident): Promise<void> {
-    // Find all alerts by this user
-    const userAlerts = await this.findAlertsByUser(incident.user);
-    
-    // Process each alert
-    for (const alert of userAlerts) {
-        const alertDate = new Date(alert.datestr);
-        const incidentStart = new Date(incident.windows_start);
-        const incidentEnd = new Date(incident.windows_end);
-        
-        // If alert falls within the incident time window
-        if (alertDate >= incidentStart && alertDate <= incidentEnd) {
-            // Associate with incident if not already
-            if (!alert.isUnderIncident || alert.incidentId !== incident.ID) {
+            } else if (alert.incidentID === incident.ID) {
                 await this.alertRepository.update(alert.ID, {
-                    isUnderIncident: true,
-                    incidentId: incident.ID
+                    isUnderIncident: false,
+                    incidentID: ""
                 });
             }
-        } 
-        // If alert is associated with this incident but now falls outside window
-        else if (alert.incidentId === incident.ID) {
-            await this.alertRepository.update(alert.ID, {
-                isUnderIncident: false,
-                incidentId: '' // Use empty string instead of null
-            });
         }
     }
-}
+
+    /**
+     * Retrieves all alerts from the database without any filtering or pagination
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to array containing all alerts in the system
+     */
+    async getAllAlerts(
+        sortField: SortField = "datestr",
+        sortOrder: SortOrder = "desc"
+    ): Promise<AlertResponseDTO[]> {
+        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
+        
+        const alerts = await this.alertRepository.find({
+            order
+        });
+        
+        return alerts.map(alert => this.mapToResponseDTO(alert));
+    }
+
+    /**
+     * Retrieves all alerts with total count metadata without filtering or pagination
+     * @param sortField - Field to sort results by (default: "datestr")
+     * @param sortOrder - Sort direction (default: "desc")
+     * @returns Promise resolving to object containing all alerts and total count
+     */
+    async getAllAlertsWithCount(
+        sortField: SortField = "datestr",
+        sortOrder: SortOrder = "desc"
+    ): Promise<{ alerts: AlertResponseDTO[], total: number }> {
+        const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
+        
+        const [alerts, total] = await this.alertRepository.findAndCount({
+            order
+        });
+        
+        return {
+            alerts: alerts.map(alert => this.mapToResponseDTO(alert)),
+            total
+        };
+    }
 }

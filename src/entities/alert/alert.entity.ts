@@ -1,6 +1,7 @@
-// alert.entity.ts (updated)
-import { Entity, Column, PrimaryColumn, Index, BeforeInsert, BeforeUpdate } from "typeorm";
+// backend/src/entities/alert/alert.entity.ts
+
 import { createHash } from "crypto";
+import { Entity, Column, PrimaryColumn, Index, BeforeInsert, BeforeUpdate } from "typeorm";
 
 @Entity("alert")
 @Index(["user", "datestr", "alert_name"], { unique: true })
@@ -42,7 +43,7 @@ export class Alert {
     isUnderIncident: boolean;
     
     @Column({ type: "varchar", nullable: true })
-    incidentId: string;
+    incidentID: string;
 
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
     created_at: Date;
@@ -50,11 +51,15 @@ export class Alert {
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP" })
     updated_at: Date;
 
+    /**
+     * Generates a unique identifier for the alert based on composite key fields
+     * This method is automatically called before inserting or updating an alert entity
+     * Uses SHA-256 hashing of user, datestr, and alert_name to create a deterministic ID
+     */
     @BeforeInsert()
     @BeforeUpdate()
     generateId() {
-        // Create a hash using the composite key fields
         const hashInput = `${this.user}|${this.datestr.toISOString()}|${this.alert_name}`;
-        this.ID = createHash('sha256').update(hashInput).digest('hex');
+        this.ID = createHash("sha256").update(hashInput).digest("hex");
     }
 }

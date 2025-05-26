@@ -1,7 +1,14 @@
-// Updated createTables.ts
 import { MigrationInterface, QueryRunner } from "typeorm";
 
+/**
+ * Migration class responsible for creating the incident and alert tables
+ * with their respective constraints and relationships
+ */
 export class createTables implements MigrationInterface {
+    /**
+     * Creates the incident and alert tables with proper constraints,
+     * foreign key relationships, and unique composite keys
+     */
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS incident (
@@ -29,7 +36,7 @@ export class createTables implements MigrationInterface {
                 "Description" TEXT,
                 "Detection_model" VARCHAR NOT NULL,
                 "isUnderIncident" BOOLEAN DEFAULT FALSE,
-                "incidentId" VARCHAR(64) NULL REFERENCES incident("ID"),
+                "incidentID" VARCHAR(64) NULL REFERENCES incident('ID'),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT "UQ_alert_composite" UNIQUE (user, datestr, alert_name)
@@ -37,6 +44,10 @@ export class createTables implements MigrationInterface {
         `);
     }
 
+    /**
+     * Drops the incident and alert tables in reverse order
+     * to maintain referential integrity
+     */
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
             DROP TABLE IF EXISTS alert;

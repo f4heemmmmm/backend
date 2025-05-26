@@ -3,15 +3,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as csv from "csv-parse";
-import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-
-// Alert Files Import
-import { Alert } from "src/entities/alert/alert.entity";
+import { Injectable, Logger } from "@nestjs/common";
 import { CreateAlertDTO } from "src/entities/alert/alert.dto";
-
-// Incident Files Import
-import { Incident } from "src/entities/incident/incident.entity";
 import { CreateIncidentDTO } from "src/entities/incident/incident.dto";
 
 @Injectable()
@@ -27,7 +21,6 @@ export class CSVParserUtil {
             throw new Error("Configuration not found!");
         }
         
-        // Use environment variables if provided, otherwise use config defaults
         this.dropPath = process.env.CSV_DROP_PATH || config.storage.csv.dropPath;
         this.processedPath = process.env.CSV_PROCESSED_PATH || config.storage.csv.processedPath;
         this.errorPath = process.env.CSV_ERROR_PATH || config.storage.csv.errorPath;
@@ -39,15 +32,15 @@ export class CSVParserUtil {
     }
     
     /**
-     * Parse incidents.csv file into DTOs
-     * @param filePath Path to the incidents.csv file
-     * @returns Promise<CreateIncidentDTO[]> Array of incident DTOs
+     * Parses incident CSV file and converts records into data transfer objects
+     * @param filePath - Full path to the incidents CSV file to be processed
+     * @returns Promise resolving to array of validated incident DTOs ready for database insertion
+     * @throws Error if file cannot be accessed or parsing fails
      */
     async parseIncidentsCSV(filePath: string): Promise<CreateIncidentDTO[]> {
         this.logger.debug(`Parsing incidents CSV file: ${filePath}`);
         
         try {
-            // First verify file exists and is readable
             await fs.promises.access(filePath, fs.constants.R_OK);
         } catch (error) {
             this.logger.error(`Cannot access file ${filePath}: ${error.message}`);
@@ -57,7 +50,7 @@ export class CSVParserUtil {
         const records: CreateIncidentDTO[] = [];
         
         try {
-            const fileContent = await fs.promises.readFile(filePath, 'utf8');
+            const fileContent = await fs.promises.readFile(filePath, "utf8");
             this.logger.debug(`CSV file content sample: ${fileContent.substring(0, 200)}...`);
             
             const parser = fs
@@ -78,14 +71,11 @@ export class CSVParserUtil {
                         continue;
                     }
                     
-                    // Convert UNIX timestamps to Date objects
-                    let windowsStart, windowsEnd;
+                    let windowsStart: Date, windowsEnd: Date;
                     try {
-                        // Try parsing as Unix timestamp (seconds)
                         if (/^\d+$/.test(record.windows_start.toString())) {
                             windowsStart = new Date(parseInt(record.windows_start) * 1000);
                         } else {
-                            // Try parsing as standard date string
                             windowsStart = new Date(record.windows_start);
                         }
                         
@@ -95,7 +85,6 @@ export class CSVParserUtil {
                             windowsEnd = new Date(record.windows_end);
                         }
                         
-                        // Validate dates
                         if (isNaN(windowsStart.getTime()) || isNaN(windowsEnd.getTime())) {
                             throw new Error(`Invalid timestamp values: start=${record.windows_start}, end=${record.windows_end}`);
                         }
@@ -104,23 +93,19 @@ export class CSVParserUtil {
                         continue;
                     }
 
-                    // Custom parsing for Python-style list string
                     const parsedWindows: string[] = [];
                     if (record.windows) {
                         try {
-                            // Handle different array formats
-                            if (typeof record.windows === 'string') {
-                                if (record.windows.startsWith('[') && record.windows.endsWith(']')) {
-                                    // Python-style list representation
+                            if (typeof record.windows === "string") {
+                                if (record.windows.startsWith("[") && record.windows.endsWith("]")) {
                                     const windows = record.windows
-                                        .replace(/^\[|\]$/g, '')                                        // Remove outer brackets
-                                        .split(/'\s*,?\s*'/)                                            // Split by comma or whitespace between quotes
-                                        .map((dateStr: string) => dateStr.replace(/^'|'$/g, '').trim()) // Remove quotes and trim
-                                        .filter((dateStr: string) => dateStr.length > 0);               // Filter out empty strings
+                                        .replace(/^\[|\]$/g, "")
+                                        .split(/"\s*,?\s*"/)
+                                        .map((dateStr: string) => dateStr.replace(/^"|"$/g, "").trim())
+                                        .filter((dateStr: string) => dateStr.length > 0);
                                     
                                     windows.forEach((dateStr: string) => {
                                         try {
-                                            // Convert to ISO format
                                             const date = new Date(dateStr);
                                             if (!isNaN(date.getTime())) {
                                                 parsedWindows.push(date.toISOString());
@@ -129,10 +114,9 @@ export class CSVParserUtil {
                                             this.logger.warn(`Invalid date string: ${dateStr}`);
                                         }
                                     });
-                                } else if (record.windows.includes(',')) {
-                                    // Simple comma-separated format
+                                } else if (record.windows.includes(",")) {
                                     record.windows
-                                        .split(',')
+                                        .split(",")
                                         .map(dateStr => dateStr.trim())
                                         .filter(dateStr => dateStr.length > 0)
                                         .forEach(dateStr => {
@@ -146,7 +130,6 @@ export class CSVParserUtil {
                                             }
                                         });
                                 } else {
-                                    // Single date string
                                     try {
                                         const date = new Date(record.windows);
                                         if (!isNaN(date.getTime())) {
@@ -157,7 +140,6 @@ export class CSVParserUtil {
                                     }
                                 }
                             } else if (Array.isArray(record.windows)) {
-                                // Already an array
                                 record.windows.forEach((dateStr: string) => {
                                     try {
                                         const date = new Date(dateStr);
@@ -171,7 +153,6 @@ export class CSVParserUtil {
                             }
                         } catch (error) {
                             this.logger.warn(`Error parsing windows array: ${error.message}`, record);
-                            // Keep parsedWindows as empty array
                         }
                     }
 
@@ -204,15 +185,15 @@ export class CSVParserUtil {
     }
 
     /**
-     * Parse alert CSV files into DTOs
-     * @param filePath Path to the alert CSV file
-     * @returns Promise<CreateAlertDTO[]> Array of alert DTOs
+     * Parses alert CSV file and converts records into data transfer objects with complex evidence parsing
+     * @param filePath - Full path to the alert CSV file to be processed
+     * @returns Promise resolving to array of validated alert DTOs ready for database insertion
+     * @throws Error if file cannot be accessed or parsing fails
      */
     async parseAlertCSV(filePath: string): Promise<CreateAlertDTO[]> {
         this.logger.debug(`Parsing alert CSV file: ${filePath}`);
         
         try {
-            // First verify file exists and is readable
             await fs.promises.access(filePath, fs.constants.R_OK);
         } catch (error) {
             this.logger.error(`Cannot access file ${filePath}: ${error.message}`);
@@ -222,7 +203,7 @@ export class CSVParserUtil {
         const records: CreateAlertDTO[] = [];
         
         try {
-            const fileContent = await fs.promises.readFile(filePath, 'utf8');
+            const fileContent = await fs.promises.readFile(filePath, "utf8");
             this.logger.debug(`CSV file content sample: ${fileContent.substring(0, 200)}...`);
             
             const parser = fs
@@ -238,8 +219,6 @@ export class CSVParserUtil {
                 try {
                     this.logger.debug(`Processing alert record: ${JSON.stringify(record)}`);
                     
-                    // Robust parsing of Evidence field
-                    // Always ensure required fields are present according to database constraints
                     let evidence: any = {
                         site: "",
                         count: 0,
@@ -249,56 +228,46 @@ export class CSVParserUtil {
                     try {
                         if (typeof record.evidence === "string") {
                             try {
-                                // Try standard JSON parsing first
                                 const parsedEvidence = JSON.parse(record.evidence);
                                 evidence = {
-                                    ...evidence, // Keep defaults as fallback
-                                    ...parsedEvidence // Override with parsed values
+                                    ...evidence,
+                                    ...parsedEvidence
                                 };
                             } catch (jsonError) {
-                                // Fallback to custom parsing
                                 const parsedEvidence = this.parseStringifiedEvidence(record.evidence);
                                 evidence = {
-                                    ...evidence, // Keep defaults as fallback
-                                    ...parsedEvidence // Override with parsed values
+                                    ...evidence,
+                                    ...parsedEvidence
                                 };
                             }
                         } else if (typeof record.evidence === "object" && record.evidence !== null) {
                             evidence = {
-                                ...evidence, // Keep defaults as fallback
-                                ...record.evidence // Override with provided values
+                                ...evidence,
+                                ...record.evidence
                             };
                         }
                     } catch (evidenceParseError) {
                         this.logger.warn(`Could not parse evidence for alert ${record.alert_name}: ${evidenceParseError.message}`);
-                        // Default evidence object already has required fields
                     }
 
-                    // Ensure list_raw_events is always an array
                     if (!Array.isArray(evidence.list_raw_events)) {
                         try {
                             evidence.list_raw_events = this.parseListRawEvents(evidence.list_raw_events || "");
                         } catch (listEventsError) {
-                            this.logger.warn(`Could not parse 'list_raw_events': ${listEventsError.message}`);
+                            this.logger.warn(`Could not parse "list_raw_events": ${listEventsError.message}`);
                             evidence.list_raw_events = [];
                         }
                     }
                     
-                    // Convert count to number if it's not already
-                    evidence.count = typeof evidence.count === 'number' ? evidence.count : parseInt(evidence.count) || 0;
-                    
-                    // Ensure site is a string
+                    evidence.count = typeof evidence.count === "number" ? evidence.count : parseInt(evidence.count) || 0;
                     evidence.site = evidence.site || "";
                     
-                    // Ensure date is properly parsed
-                    let datestr;
+                    let datestr: Date;
                     try {
                         if (record.datestr) {
-                            // Try parsing as Unix timestamp first
                             if (/^\d+$/.test(record.datestr.toString())) {
                                 datestr = new Date(parseInt(record.datestr) * 1000);
                             } else {
-                                // Try parsing as date string
                                 datestr = new Date(record.datestr);
                             }
                             
@@ -306,16 +275,14 @@ export class CSVParserUtil {
                                 throw new Error(`Invalid timestamp: ${record.datestr}`);
                             }
                         } else {
-                            // Default to current date if missing
                             datestr = new Date();
                             this.logger.warn(`Missing datestr in record, using current date: ${datestr.toISOString()}`);
                         }
                     } catch (error) {
                         this.logger.warn(`Error parsing datestr: ${error.message}`, record);
-                        datestr = new Date(); // Fallback to current date
+                        datestr = new Date();
                     }
                     
-                    // Ensure all required fields have default values
                     const alertRecord: CreateAlertDTO = {
                         user: record.user || "",
                         datestr: datestr,
@@ -351,8 +318,10 @@ export class CSVParserUtil {
     }
 
     /**
-     * Move successfully processed CSV file to processed directory
-     * @param filePath Source file path
+     * Moves processed CSV file to designated directory with conflict resolution
+     * @param sourcePath - Full path to the source file to be moved
+     * @param destinationDirectory - Target directory path (defaults to configured processed path)
+     * @throws Error if file movement operation fails
      */
     async moveFile(sourcePath: string, destinationDirectory: string = this.processedPath): Promise<void> {
         try {
@@ -361,13 +330,10 @@ export class CSVParserUtil {
             
             this.logger.debug(`Moving file from ${sourcePath} to ${destinationPath}`);
             
-            // Ensure destination directory exists
             await fs.promises.mkdir(destinationDirectory, { recursive: true });
             
-            // Check if destination file already exists
             try {
                 await fs.promises.access(destinationPath);
-                // If file exists, append timestamp to avoid conflicts
                 const timestamp = new Date().getTime();
                 const newDestPath = path.join(
                     destinationDirectory, 
@@ -377,13 +343,11 @@ export class CSVParserUtil {
                 await fs.promises.copyFile(sourcePath, newDestPath);
                 await fs.promises.unlink(sourcePath);
             } catch (err) {
-                // File doesn't exist, proceed with rename
                 try {
                     await fs.promises.rename(sourcePath, destinationPath);
                 } catch (renameError) {
-                    // If rename fails (possibly cross-device), try copy + delete
-                    if (renameError.code === 'EXDEV') {
-                        this.logger.warn('Cross-device rename not supported, using copy + delete');
+                    if (renameError.code === "EXDEV") {
+                        this.logger.warn("Cross-device rename not supported, using copy + delete");
                         await fs.promises.copyFile(sourcePath, destinationPath);
                         await fs.promises.unlink(sourcePath);
                     } else {
@@ -400,33 +364,32 @@ export class CSVParserUtil {
     }
 
     /**
-     * Helper method to parse stringified evidence
+     * Parses stringified evidence data from CSV records with multiple format support
+     * @param evidenceString - Raw evidence string from CSV that may be JSON or Python-dict format
+     * @returns Parsed evidence object with fallback to default structure if parsing fails
      */
     private parseStringifiedEvidence(evidenceString: string): any {
         this.logger.debug(`Parsing stringified evidence: ${evidenceString.substring(0, 100)}...`);
         
-        // Remove outer quotes and unescape
         let cleanedString = evidenceString
-            .replace(/^["']|["']$/g, '')        // Remove outer quotes
-            .replace(/\\"/g, '"')               // Unescape quotes
-            .replace(/\\\\/g, '\\');            // Unescape backslashes
+            .replace(/^[""]|[""]$/g, "")
+            .replace(/\\"/g, "\"")
+            .replace(/\\\\/g, "\\");
 
         try {
             return JSON.parse(cleanedString);
         } catch (error) {
             this.logger.debug(`Standard JSON.parse failed: ${error.message}, trying normalized format`);
             try {
-                // Try to normalize Python-like dictionary strings to valid JSON
                 const normalizedJSON = cleanedString
-                    .replace(/(\w+):/g, '"$1":')        // Add quotes to keys
-                    .replace(/'/g, '"')                 // Replace single quotes with double quotes
-                    .replace(/\\/g, '\\\\');            // Escape backslashes
+                    .replace(/(\w+):/g, "\"$1\":")
+                    .replace(/"/g, "\"")
+                    .replace(/\\/g, "\\\\");
                 
                 return JSON.parse(normalizedJSON);
             } catch (normalizeError) {
                 this.logger.debug(`Normalized JSON parse failed: ${normalizeError.message}, returning base object`);
                 
-                // Return fallback object with required fields
                 return { 
                     site: "",
                     count: 0,
@@ -438,63 +401,54 @@ export class CSVParserUtil {
     }
 
     /**
-     * Helper method to parse list_raw_events
+     * Parses list_raw_events field which can be in various formats (array, JSON string, CSV string)
+     * @param listRawEvents - Raw list events data that needs to be converted to array format
+     * @returns Array of parsed event objects or strings, empty array if parsing fails
      */
     private parseListRawEvents(listRawEvents: any): any[] {
         this.logger.debug(`Parsing list_raw_events: ${typeof listRawEvents}`);
         
-        // If it's already an array, then return as it is
         if (Array.isArray(listRawEvents)) {
             return listRawEvents;
         }
         
-        // If it's a string, attempt to parse it as JSON
         if (typeof listRawEvents === "string") {
-            // Empty string check
-            if (!listRawEvents || listRawEvents.trim() === '') {
+            if (!listRawEvents || listRawEvents.trim() === "") {
                 return [];
             }
             
-            // Try to parse as JSON array
-            if (listRawEvents.startsWith('[') && listRawEvents.endsWith(']')) {
+            if (listRawEvents.startsWith("[") && listRawEvents.endsWith("]")) {
                 try {
                     return JSON.parse(listRawEvents);
                 } catch (error) {
-                    // Continue with other parsing methods if JSON.parse fails
                     this.logger.debug(`JSON.parse failed for list_raw_events: ${error.message}`);
                 }
             }
             
-            // Remove outer brackets/quotes
             let cleanedString = listRawEvents
-                .replace(/^["'\[]+|["\'\]]+$/g, '')     // Remove outer quotes and brackets
-                .trim();                                // Trim whitespaces
+                .replace(/^[""\[]+|[""\\]]+$/g, "")
+                .trim();
 
-            // Empty string check after cleaning
             if (!cleanedString) {
                 return [];
             }
 
-            // Split by comma, handling potential JSON conflicts
             const events = cleanedString.split(/,\s*(?={)/);
-            
             const parsedEvents: any[] = [];
             
             events.forEach(eventString => {
                 eventString = eventString.trim();
                 if (!eventString) {
-                    return; // Skip empty strings
+                    return;
                 }
                 
                 try {
-                    // Try to parse as JSON object
-                    if (eventString.startsWith('{') && eventString.endsWith('}')) {
+                    if (eventString.startsWith("{") && eventString.endsWith("}")) {
                         parsedEvents.push(JSON.parse(eventString));
                     } else {
-                        // Try to normalize and then parse
                         const normalized = eventString
-                            .replace(/(\w+):/g, '"$1":')
-                            .replace(/'/g, '"');
+                            .replace(/(\w+):/g, "\"$1\":")
+                            .replace(/"/g, "\"");
                             
                         parsedEvents.push(JSON.parse(`{${normalized}}`));
                     }
@@ -507,7 +461,6 @@ export class CSVParserUtil {
             return parsedEvents.filter(event => event !== null && event !== "");
         }
         
-        // If it's not an array or string, return empty array
         return [];
     }
 }
