@@ -1,0 +1,1 @@
+{"version":3,"file":"createTables.js","sourceRoot":"","sources":["../../src/migrations/createTables.ts"],"names":[],"mappings":";;;AAMA,MAAa,YAAY;IAKd,KAAK,CAAC,EAAE,CAAC,WAAwB;QACpC,MAAM,WAAW,CAAC,KAAK,CAAC;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;SA+BvB,CAAC,CAAC;IACP,CAAC;IAMM,KAAK,CAAC,IAAI,CAAC,WAAwB;QACtC,MAAM,WAAW,CAAC,KAAK,CAAC;;;SAGvB,CAAC,CAAC;IACP,CAAC;CACJ;AAlDD,oCAkDC"}
