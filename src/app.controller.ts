@@ -1,25 +1,29 @@
 // backend/src/app.controller.ts
-
 import { AppService } from "./app.service";
 import { Controller, Get } from "@nestjs/common";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 
 /**
- * Main application controller providing basic system endpoints
- * Handles health checks and application information requests
+ * AppController for basic system endpoints and monitoring functionality.
+ * 
+ * Provides essential application services including:
+ * - Health check endpoints for load balancer and monitoring system integration
+ * - Application information retrieval for system identification and debugging
+ * - Public endpoint access for operational monitoring without authentication
+ * - System metrics including uptime, environment, and version information
+ * 
+ * Security Note: These endpoints are intentionally public for monitoring purposes.
+ * No sensitive data is exposed. Add @UseGuards(JWTAuthGuard) if protection needed.
  */
 @ApiTags("Application")
 @Controller()
 export class AppController {
     constructor(private readonly appService: AppService) {}
 
-    /**
-     * Health check endpoint that returns application status and metrics
-     */
     @Get("health")
     @ApiOperation({ 
         summary: "Get application health status",
-        description: "Returns the current health status of the application including uptime and environment information"
+        description: "Returns the current health status of the application including uptime and environment information (public endpoint)"
     })
     @ApiResponse({ 
         status: 200, 
@@ -39,13 +43,10 @@ export class AppController {
         return this.appService.getHealth();
     }
 
-    /**
-     * Application information endpoint that returns system details
-     */
     @Get("information")
     @ApiOperation({ 
         summary: "Get application information",
-        description: "Returns basic information about the application including name, version, and description"
+        description: "Returns basic information about the application including name, version, and description (public endpoint)"
     })
     @ApiResponse({ 
         status: 200, 

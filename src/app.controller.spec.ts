@@ -1,12 +1,16 @@
 // backend/src/app.controller.spec.ts
-
 import { AppService } from "./app.service";
 import { AppController } from "./app.controller";
 import { Test, TestingModule } from "@nestjs/testing";
 
 /**
- * Test suite for AppController
- * Tests basic application endpoints and health checks
+ * AppController test suite for basic application endpoints and health monitoring.
+ * 
+ * Tests comprehensive application functionality including:
+ * - Health endpoint status verification and response structure validation
+ * - Application information endpoint data integrity and content verification
+ * - Controller dependency injection and service integration testing
+ * - Response format consistency and property presence validation
  */
 describe("AppController", () => {
     let appController: AppController;
@@ -20,9 +24,6 @@ describe("AppController", () => {
         appController = app.get<AppController>(AppController);
     });
 
-    /**
-     * Tests for health endpoint functionality
-     */
     describe("health endpoint", () => {
         it("should return health status object", () => {
             const result = appController.getHealth();
@@ -33,9 +34,6 @@ describe("AppController", () => {
         });
     });
 
-    /**
-     * Tests for application information endpoint
-     */
     describe("information endpoint", () => {
         it("should return application information", () => {
             const result = appController.getAppInformation();

@@ -1,17 +1,17 @@
 // backend/src/app.service.ts
-
 import { Injectable } from "@nestjs/common";
 
 /**
- * Application service providing basic health and information endpoints
- * Used for monitoring application status and retrieving system information
+ * AppService for application monitoring and system information retrieval.
+ * 
+ * Provides essential system functionality including:
+ * - Health status monitoring with uptime and environment metrics
+ * - Application information service for system identification
+ * - Runtime environment detection and version reporting
+ * - System timestamp and process metrics for operational monitoring
  */
 @Injectable()
 export class AppService {
-    /**
-     * Returns the current health status of the application
-     * including timestamp and uptime information
-     */
     getHealth() {
         return {
             status: "OK",
@@ -22,10 +22,6 @@ export class AppService {
         };
     }
 
-    /**
-     * Returns basic application information including
-     * name, version, description, and current environment
-     */
     getAppInformation() {
         return {
             name: "Insider Threat Monitoring System",

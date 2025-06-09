@@ -1,20 +1,28 @@
 // backend/src/app.module.ts
-
 import { Module } from "@nestjs/common";
-import { AppService } from "./app.service";
-import appConfig from "./config/app.config";
-import { AppController } from "./app.controller";
-import { CSVParserUtil } from "./utils/csv-parser.util";
-import { AlertModule } from "./entities/alert/alert.module";
 import { ConfigModule, ConfigService } from "@nestjs/config";
-import { AnalyticsModule } from "./analytics/analytics.module";
-import { CSVMonitorService } from "./services/csv-monitor.service";
-import { IncidentModule } from "./entities/incident/incident.module";
 import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
 
+import appConfig from "./config/app.config";
+import { AppService } from "./app.service";
+import { AppController } from "./app.controller";
+import { UserModule } from "./modules/user/user.module";
+import { AlertModule } from "./modules/alert/alert.module";
+import { CSVParserUtil } from "./common/utils/csv-parser.util";
+import { IncidentModule } from "./modules/incident/incident.module";
+import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { CSVMonitorService } from "./common/services/csv-monitor.service";
+
 /**
- * Root application module that configures all services, controllers, and modules
- * Sets up database connection, CSV monitoring, and all feature modules
+ * AppModule as the root module for enterprise insider threat monitoring system.
+ * 
+ * Configures comprehensive application architecture including:
+ * - Global configuration management with environment variable expansion
+ * - Async TypeORM database connection with configuration service integration
+ * - JWT authentication module for secure user management
+ * - Core business modules for incidents, alerts, and analytics
+ * - CSV monitoring services for real-time data processing
+ * - Shared utilities and services across all application modules
  */
 @Module({
     imports: [
@@ -26,10 +34,13 @@ import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
         }),
         TypeOrmModule.forRootAsync({
             imports: [ConfigModule],
-            useFactory: async (configService: ConfigService): Promise<TypeOrmModuleOptions> => 
-                configService.get("config.database") as TypeOrmModuleOptions,
+            useFactory: async (configService: ConfigService): Promise<TypeOrmModuleOptions> => {
+                const dbConfig = configService.get("config.database") as TypeOrmModuleOptions;
+                return dbConfig;
+            },
             inject: [ConfigService],
         }),
+        UserModule,
         IncidentModule,
         AlertModule,
         AnalyticsModule,

@@ -4,7 +4,7 @@ const path = require("path");
 const config_1 = require("@nestjs/config");
 const alert_entity_1 = require("../entities/alert/alert.entity");
 const incident_entity_1 = require("../entities/incident/incident.entity");
-const defaultStoragePath = path.join(__dirname, "../../storage");
+const defaultStoragePath = "/app/storage";
 exports.default = (0, config_1.registerAs)("config", () => ({
     database: {
         type: "postgres",

@@ -11,6 +11,7 @@ const common_1 = require("@nestjs/common");
 const app_service_1 = require("./app.service");
 const app_config_1 = require("./config/app.config");
 const app_controller_1 = require("./app.controller");
+const user_module_1 = require("./entities/user/user.module");
 const csv_parser_util_1 = require("./utils/csv-parser.util");
 const alert_module_1 = require("./entities/alert/alert.module");
 const config_1 = require("@nestjs/config");
@@ -32,9 +33,13 @@ exports.AppModule = AppModule = __decorate([
             }),
             typeorm_1.TypeOrmModule.forRootAsync({
                 imports: [config_1.ConfigModule],
-                useFactory: async (configService) => configService.get("config.database"),
+                useFactory: async (configService) => {
+                    const dbConfig = configService.get("config.database");
+                    return dbConfig;
+                },
                 inject: [config_1.ConfigService],
             }),
+            user_module_1.UserModule,
             incident_module_1.IncidentModule,
             alert_module_1.AlertModule,
             analytics_module_1.AnalyticsModule,
