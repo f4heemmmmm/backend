@@ -5,33 +5,12 @@ import { DataSource } from "typeorm";
 import { User } from "src/modules/user/user.entity";
 import { Alert } from "src/modules/alert/alert.entity";
 import { Incident } from "src/modules/incident/incident.entity";
-import { IncidentStatusHistory } from "src/modules/incident/incident-status-history.entity";
-import { IncidentComment } from "src/modules/incident/incident-comment.entity";
+import { IncidentComment } from "src/modules/incident/comment/incident-comment.entity";
+import { IncidentStatusHistory } from "src/modules/incident/status-history/incident-status-history.entity";
 
 /**
- * AppDataSource - Enterprise TypeORM configuration for PostgreSQL database connectivity.
- * 
- * This comprehensive data source configuration provides:
- * - Environment-aware database connection settings with secure defaults
- * - Production-ready configuration with development-friendly features
- * - Automatic entity discovery and relationship mapping
- * - Migration management with version control and rollback capabilities
- * - Performance optimization through connection pooling and query logging
- * - Security considerations including SSL configuration and credential management
- * - Development convenience features like automatic synchronization
- * - Monitoring and debugging support through configurable logging levels
- * 
- * Configuration Features:
- * - PostgreSQL database connectivity with connection parameter validation
- * - Environment variable integration for deployment flexibility
- * - Migration tracking with dedicated migrations table
- * - Entity registration for User, Alert, Incident, IncidentStatusHistory, and IncidentComment domains
- * - Development vs production behavior differentiation
- * - Logging configuration for query monitoring and performance analysis
- * 
- * The configuration automatically adapts between development and production
- * environments, enabling features like schema synchronization and query
- * logging in development while maintaining security and performance in production.
+ * TypeORM DataSource configuration for PostgreSQL with environment-aware settings,
+ * migration management, and development/production optimization.
  */
 export const AppDataSource = new DataSource({
     type: "postgres",

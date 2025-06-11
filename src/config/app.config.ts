@@ -5,21 +5,14 @@ import { registerAs } from "@nestjs/config";
 import { User } from "src/modules/user/user.entity";
 import { Alert } from "src/modules/alert/alert.entity";
 import { Incident } from "src/modules/incident/incident.entity";
-import { IncidentStatusHistory } from "src/modules/incident/incident-status-history.entity";
-import { IncidentComment } from "src/modules/incident/incident-comment.entity";
+import { IncidentComment } from "src/modules/incident/comment/incident-comment.entity";
+import { IncidentStatusHistory } from "src/modules/incident/status-history/incident-status-history.entity";
 
 const defaultStoragePath = "/app/storage";
 
 /**
- * Application configuration factory for NestJS ConfigModule.
- * 
- * Provides centralized configuration management with:
- * - Environment-aware database settings with TypeORM integration
- * - File storage paths for CSV processing workflows
- * - Monitoring intervals and server configuration
- * - Production vs development migration path handling
- * 
- * Uses environment variables with sensible defaults for deployment flexibility.
+ * Centralized application configuration factory with environment-aware settings
+ * for database, storage, monitoring, and server configuration.
  */
 export default registerAs("config", () => ({
     database: {
