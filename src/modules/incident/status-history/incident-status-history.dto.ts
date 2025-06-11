@@ -1,12 +1,13 @@
-// backend/src/modules/incident/incident-status-history.dto.ts
-import { IsString, IsBoolean, IsOptional, IsUUID, IsIn } from "class-validator";
+// backend/src/modules/incident/status-history/incident-status-history.dto.ts
+import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsIn } from "class-validator";
 
 /**
- * CreateIncidentStatusHistoryDTO for creating new status change records.
- * Used internally by the service when status changes occur.
+ * CreateIncidentStatusHistoryDTO for creating new status change occurences.
+ * Used internally by the service when the status change occurs.
  */
 export class CreateIncidentStatusHistoryDTO {
     @IsString()
+    @IsNotEmpty()
     incident_id: string;
 
     @IsBoolean()
@@ -16,12 +17,11 @@ export class CreateIncidentStatusHistoryDTO {
     new_status: boolean;
 
     @IsString()
-    @IsIn(['closed', 'reopened', 'created_open', 'created_closed'])
-    action: string; // "closed" | "reopened" | "created_open" | "created_closed"
+    @IsIn(["closed", "reopened", "created_open", "created_close"])
+    action: string;
 
-    @IsOptional()
     @IsString()
-    user_id?: string;
+    user_id: string;
 }
 
 /**
@@ -34,6 +34,6 @@ export class IncidentStatusHistoryResponseDTO {
     previous_status: boolean;
     new_status: boolean;
     action: string;
-    user_id?: string;
+    user_id: string;
     created_at: Date;
 }
