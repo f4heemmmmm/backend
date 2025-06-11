@@ -37,11 +37,11 @@ export class CreateAlertDTO {
     Description: string;
 
     @IsBoolean()
-    isUnderIncident: boolean;
+    is_under_incident: boolean;
     
     @IsString()
     @IsOptional()
-    incidentID?: string;
+    incident_id?: string;
 }
 
 /**
@@ -91,11 +91,11 @@ export class UpdateAlertDTO {
 
     @IsBoolean()
     @IsOptional()
-    isUnderIncident?: boolean;
+    is_under_incident?: boolean;
     
     @IsString()
     @IsOptional()
-    incidentID?: string;
+    incident_id?: string;
 }
 
 /**
@@ -103,7 +103,7 @@ export class UpdateAlertDTO {
  * Represents complete alert information including timestamps and relationships.
  */
 export class AlertResponseDTO {
-    ID: string;
+    id: string;
     user: string;
     datestr: Date;
     evidence: Record<string, any>;
@@ -114,8 +114,8 @@ export class AlertResponseDTO {
     Logs: string;
     Detection_model: string;
     Description: string;
-    isUnderIncident: boolean;
-    incidentID?: string;
+    is_under_incident: boolean;
+    incident_id?: string;
     created_at: Date;
     updated_at: Date;
 }

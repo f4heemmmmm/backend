@@ -16,7 +16,7 @@ import { Entity, Column, PrimaryColumn, Index, BeforeInsert, BeforeUpdate } from
 @Index(["user", "datestr", "alert_name"], { unique: true })
 export class Alert {
     @PrimaryColumn()
-    ID: string;
+    id: string;
 
     @Column()
     user: string;
@@ -49,10 +49,10 @@ export class Alert {
     Description: string;
 
     @Column({ type: "boolean", default: false })
-    isUnderIncident: boolean;
+    is_under_incident: boolean;
     
     @Column({ type: "varchar", nullable: true })
-    incidentID: string;
+    incident_id: string;
 
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
     created_at: Date;
@@ -60,14 +60,10 @@ export class Alert {
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP" })
     updated_at: Date;
 
-    /**
-     * Generates deterministic SHA-256 hash ID from composite key fields.
-     * Called automatically before insert/update operations.
-     */
     @BeforeInsert()
     @BeforeUpdate()
     generateId() {
         const hashInput = `${this.user}|${this.datestr.toISOString()}|${this.alert_name}`;
-        this.ID = createHash("sha256").update(hashInput).digest("hex");
+        this.id = createHash("sha256").update(hashInput).digest("hex");
     }
 }

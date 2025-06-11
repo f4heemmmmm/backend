@@ -1,4 +1,6 @@
 // backend/src/entities/alert/alert.service.ts
+import { Repository, FindOptionsWhere, Between, ILike, FindOptionsOrder } from "typeorm";
+import { Injectable, NotFoundException, ConflictException, Inject, forwardRef } from "@nestjs/common";
 
 import { Alert } from "./alert.entity";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -6,8 +8,6 @@ import { Incident } from "../incident/incident.entity";
 import { IncidentService } from "../incident/incident.service";
 import { IncidentResponseDTO } from "../incident/incident.dto";
 import { CreateAlertDTO, UpdateAlertDTO, AlertResponseDTO } from "./alert.dto";
-import { Repository, FindOptionsWhere, Between, ILike, FindOptionsOrder } from "typeorm";
-import { Injectable, NotFoundException, ConflictException, Inject, forwardRef } from "@nestjs/common";
 
 type SortOrder = "asc" | "desc";
 type SortField = "datestr" | "score" | "alert_name";
@@ -28,7 +28,7 @@ export class AlertService {
      */
     private mapToResponseDTO(alert: Alert): AlertResponseDTO {
         return {
-            ID: alert.ID,
+            id: alert.id,
             user: alert.user,
             datestr: alert.datestr,
             evidence: alert.evidence,
@@ -38,9 +38,9 @@ export class AlertService {
             MITRE_technique: alert.MITRE_technique,
             Logs: alert.Logs,
             Detection_model: alert.Detection_model,
-            isUnderIncident: alert.isUnderIncident,
+            is_under_incident: alert.is_under_incident,
             Description: alert.Description,
-            incidentID: alert.incidentID,
+            incident_id: alert.incident_id,
             created_at: alert.created_at,
             updated_at: alert.updated_at
         };
@@ -59,7 +59,7 @@ export class AlertService {
                 alert.datestr >= new Date(incident.windows_start) &&
                 alert.datestr <= new Date(incident.windows_end)
             );
-            return matchingIncident ? matchingIncident.ID : undefined;
+            return matchingIncident ? matchingIncident.id : undefined;
         } catch (error) {
             console.error("Error finding matching incident:", error);
             return undefined;
@@ -85,10 +85,10 @@ export class AlertService {
         try {
             const alert = this.alertRepository.create(createAlertDTO);
 
-            const matchingIncidentID = await this.findMatchingIncidentForAlert(alert);
-            if (matchingIncidentID) {
-                alert.incidentID = matchingIncidentID;
-                alert.isUnderIncident = true;
+            const matchingIncident_id = await this.findMatchingIncidentForAlert(alert);
+            if (matchingIncident_id) {
+                alert.incident_id = matchingIncident_id;
+                alert.is_under_incident = true;
             }
             
             const savedAlert = await this.alertRepository.save(alert);
@@ -148,7 +148,7 @@ export class AlertService {
         const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
         const [alerts, total] = await this.alertRepository.findAndCount({
             where: [
-                { ID: searchQuery },
+                { id: searchQuery },
                 { alert_name: searchQuery },
                 { user: searchQuery },
                 { MITRE_tactic: searchQuery },
@@ -174,7 +174,7 @@ export class AlertService {
     async findAlertByID(id: string): Promise<AlertResponseDTO> {
         const alert = await this.alertRepository.findOne({
             where: {
-                ID: id
+                id: id
             }
         });
         if (!alert) {
@@ -191,14 +191,14 @@ export class AlertService {
     async getIncidentForAlert(alertID: string): Promise<IncidentResponseDTO | null> {
         const alert = await this.alertRepository.findOne({
             where: {
-                ID: alertID
+                id: alertID
             }
         });
-        if (!alert || !alert.isUnderIncident || !alert.incidentID) {
+        if (!alert || !alert.is_under_incident || !alert.incident_id) {
             return null;
         }
         try {
-            return await this.incidentService.findIncidentByID(alert.incidentID);
+            return await this.incidentService.findIncidentByID(alert.incident_id);
         } catch (error) {
             throw new NotFoundException(`Unable to find incident related to the alert!`);
         }
@@ -206,17 +206,17 @@ export class AlertService {
     
     /**
      * Retrieves all alerts associated with a specific incident
-     * @param incidentID - Unique identifier of the incident to find alerts for
+     * @param incident_id - Unique identifier of the incident to find alerts for
      * @param sortField - Field to sort results by (default: "datestr")
      * @param sortOrder - Sort direction (default: "desc")
      * @returns Promise resolving to array of alerts associated with the incident
      */
-    async findAlertsByIncidentID(incidentID: string, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
+    async findAlertsByIncidentID(incident_id: string, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
         const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
         const alerts = await this.alertRepository.find({
             where: {
-                incidentID,
-                isUnderIncident: true
+                incident_id,
+                is_under_incident: true
             },
             order
         });
@@ -232,7 +232,7 @@ export class AlertService {
     async updateAlertByID(id: string, updateAlertDTO: UpdateAlertDTO): Promise<AlertResponseDTO> {
         const existingAlert = await this.alertRepository.findOne({
             where: {
-                ID: id
+                id: id
             }
         });
         if (!existingAlert) {
@@ -243,7 +243,7 @@ export class AlertService {
 
             const updatedAlert = await this.alertRepository.findOne({
                 where: {
-                    ID: id
+                    id: id
                 }
             });
             if (!updatedAlert) {
@@ -251,14 +251,14 @@ export class AlertService {
             }
 
             if (updateAlertDTO.datestr || updateAlertDTO.user) {
-                const matchingIncidentID = await this.findMatchingIncidentForAlert(updatedAlert);
-                if (matchingIncidentID) {
-                    updatedAlert.incidentID = matchingIncidentID;
-                    updatedAlert.isUnderIncident = true;
+                const matchingIncident_id = await this.findMatchingIncidentForAlert(updatedAlert);
+                if (matchingIncident_id) {
+                    updatedAlert.incident_id = matchingIncident_id;
+                    updatedAlert.is_under_incident = true;
                     await this.alertRepository.save(updatedAlert);
-                } else if (updatedAlert.isUnderIncident) {
-                    updatedAlert.incidentID = "";
-                    updatedAlert.isUnderIncident = false;
+                } else if (updatedAlert.is_under_incident) {
+                    updatedAlert.incident_id = "";
+                    updatedAlert.is_under_incident = false;
                     await this.alertRepository.save(updatedAlert);
                 }
             }
@@ -277,7 +277,7 @@ export class AlertService {
      * @returns Promise resolving to boolean indicating success of deletion
      */
     async removeAlertByID(id: string): Promise<boolean> {
-        const result = await this.alertRepository.delete({ ID: id });
+        const result = await this.alertRepository.delete({ id: id });
         return result?.affected ? result.affected > 0 : false;
     }
 
@@ -367,16 +367,16 @@ export class AlertService {
 
     /**
      * Retrieves alerts based on their incident association status
-     * @param isUnderIncident - Boolean flag indicating whether to fetch alerts under incidents
+     * @param is_under_incident - Boolean flag indicating whether to fetch alerts under incidents
      * @param sortField - Field to sort results by (default: "datestr")
      * @param sortOrder - Sort direction (default: "desc")
      * @returns Promise resolving to array of alerts based on incident association
      */
-    async findAlertsUnderIncident(isUnderIncident: boolean, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
+    async findAlertsUnderIncident(is_under_incident: boolean, sortField: SortField = "datestr", sortOrder: SortOrder = "desc"): Promise<AlertResponseDTO[]> {
         const order: FindOptionsOrder<Alert> = { [sortField]: sortOrder };
         const alerts = await this.alertRepository.find({
             where: {
-                isUnderIncident,
+                is_under_incident,
             },
             order
         });
@@ -415,7 +415,7 @@ export class AlertService {
     async update(user: string, datestr: Date, alertName: string, updateAlertDTO: UpdateAlertDTO): Promise<AlertResponseDTO> {
         const existingAlert = await this.findOne(user, datestr, alertName);
         try {
-            await this.alertRepository.update(existingAlert.ID, updateAlertDTO);
+            await this.alertRepository.update(existingAlert.id, updateAlertDTO);
             if (updateAlertDTO.user || updateAlertDTO.datestr || updateAlertDTO.alert_name) {
                 const newUser = updateAlertDTO.user || user;
                 const newDatestr = updateAlertDTO.datestr || datestr;
@@ -445,16 +445,16 @@ export class AlertService {
             const incidentEnd = new Date(incident.windows_end);
 
             if (alertDate >= incidentStart && alertDate <= incidentEnd) {
-                if (!alert.isUnderIncident || alert.incidentID !== incident.ID) {
-                    await this.alertRepository.update(alert.ID, {
-                        isUnderIncident: true,
-                        incidentID: incident.ID
+                if (!alert.is_under_incident || alert.incident_id !== incident.id) {
+                    await this.alertRepository.update(alert.id, {
+                        is_under_incident: true,
+                        incident_id: incident.id
                     });
                 }
-            } else if (alert.incidentID === incident.ID) {
-                await this.alertRepository.update(alert.ID, {
-                    isUnderIncident: false,
-                    incidentID: ""
+            } else if (alert.incident_id === incident.id) {
+                await this.alertRepository.update(alert.id, {
+                    is_under_incident: false,
+                    incident_id: ""
                 });
             }
         }
