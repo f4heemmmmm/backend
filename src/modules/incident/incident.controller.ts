@@ -3,8 +3,10 @@ import { IncidentService } from "./incident.service";
 import { AlertResponseDTO } from "../alert/alert.dto";
 import { JWTAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateIncidentDTO, UpdateIncidentDTO, IncidentResponseDTO } from "./incident.dto";
+import { IncidentStatusHistoryResponseDTO } from "./incident-status-history.dto";
+import { CreateIncidentCommentDTO, UpdateIncidentCommentDTO, IncidentCommentResponseDTO } from "./incident-comment.dto";
 import { ApiTags, ApiBody, ApiQuery, ApiResponse, ApiParam, ApiOperation, ApiCookieAuth } from "@nestjs/swagger";
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus, ParseFloatPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus, ParseFloatPipe, UseGuards, Request } from "@nestjs/common";
 
 type SortOrder = "asc" | "desc";
 type SortField = "windows_start" | "score" | "user";
@@ -12,13 +14,18 @@ type SortField = "windows_start" | "score" | "user";
 /**
  * IncidentController for managing security incident operations with comprehensive API endpoints.
  * 
- * Provides REST API functionality for:
+ * Enhanced with user tracking for status changes and full comment functionality:
  * - CRUD operations for incident management with validation
  * - Advanced search and filtering with flexible date and score ranges
  * - User-specific incident retrieval and threshold-based queries
  * - Alert correlation and relationship management
  * - Pagination support and flexible sorting across multiple fields
  * - JWT authentication protection for all endpoints
+ * - Status change history tracking with user attribution
+ * - User tracking for incident closure/reopening actions
+ * - Current user extraction from JWT tokens for audit trails
+ * - Complete comment system with CRUD operations and user ownership
+ * - Comment timeline integration with user permissions
  */
 @ApiTags("incidents")
 @Controller("incident")
@@ -29,6 +36,15 @@ export class IncidentController {
         private readonly incidentService: IncidentService
     ) {}
 
+    /**
+     * Extracts current user ID from JWT token in request
+     */
+    private getCurrentUserId(req: any): string | undefined {
+        return req.user?.sub || req.user?.id;
+    }
+
+    // =================== EXISTING INCIDENT ENDPOINTS ===================
+
     @Post()
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({ summary: "Create a new incident", description: "Creates a new incident with the provided data (requires authentication)" })
@@ -37,8 +53,9 @@ export class IncidentController {
     @ApiResponse({ status: 400, description: "Invalid input data" })
     @ApiResponse({ status: 401, description: "Unauthorized - Invalid or missing authentication" })
     @ApiResponse({ status: 500, description: "Internal server error" })
-    async create(@Body() createIncidentDTO: CreateIncidentDTO): Promise<IncidentResponseDTO> {
-        return this.incidentService.create(createIncidentDTO);
+    async create(@Body() createIncidentDTO: CreateIncidentDTO, @Request() req): Promise<IncidentResponseDTO> {
+        const currentUserId = this.getCurrentUserId(req);
+        return this.incidentService.create(createIncidentDTO, currentUserId);
     }
 
     @Get()
@@ -184,6 +201,19 @@ export class IncidentController {
         return this.incidentService.getAlertsForIncident(incidentID);
     }
 
+    @Get(":id/status-history")
+    @ApiOperation({ summary: "Get incident status history", description: "Retrieve the complete status change history for a specific incident (requires authentication)" })
+    @ApiParam({ name: "id", type: String, description: "Incident ID to get status history for" })
+    @ApiResponse({ status: 200, description: "Successfully retrieved incident status history", type: [IncidentStatusHistoryResponseDTO] })
+    @ApiResponse({ status: 401, description: "Unauthorized - Invalid or missing authentication" })
+    @ApiResponse({ status: 404, description: "Incident not found" })
+    @ApiResponse({ status: 500, description: "Internal server error" })
+    async getIncidentStatusHistory(
+        @Param("id") id: string
+    ): Promise<IncidentStatusHistoryResponseDTO[]> {
+        return this.incidentService.getIncidentStatusHistory(id);
+    }
+
     @Get("user/:user")
     @ApiOperation({ summary: "Get incidents by user", description: "Retrieve all incidents associated with a specific user (requires authentication)" })
     @ApiParam({ name: "user", type: String, description: "User to search for" })
@@ -208,7 +238,7 @@ export class IncidentController {
     }
 
     @Put(":id")
-    @ApiOperation({ summary: "Update incident", description: "Update an existing incident by its ID (requires authentication)" })
+    @ApiOperation({ summary: "Update incident", description: "Update an existing incident by its ID with user tracking for status changes (requires authentication)" })
     @ApiParam({ name: "id", type: String, description: "Incident ID" })
     @ApiBody({ type: UpdateIncidentDTO, description: "Incident update data" })
     @ApiResponse({ status: 200, description: "Incident successfully updated", type: IncidentResponseDTO })
@@ -218,9 +248,11 @@ export class IncidentController {
     @ApiResponse({ status: 500, description: "Internal server error" })
     async updateById(
         @Param("id") id: string,
-        @Body() updateIncidentDTO: UpdateIncidentDTO
+        @Body() updateIncidentDTO: UpdateIncidentDTO,
+        @Request() req
     ): Promise<IncidentResponseDTO> {
-        return this.incidentService.updateById(id, updateIncidentDTO);
+        const currentUserId = this.getCurrentUserId(req);
+        return this.incidentService.updateById(id, updateIncidentDTO, currentUserId);
     }
 
     @Delete(":id")
@@ -235,6 +267,111 @@ export class IncidentController {
         @Param("id") id: string
     ): Promise<void> {
         await this.incidentService.removeById(id);
+    }
+
+    // =================== COMMENT ENDPOINTS ===================
+
+    @Post(":id/comments")
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({ summary: "Add comment to incident", description: "Creates a new comment on a specific incident (requires authentication)" })
+    @ApiParam({ name: "id", type: String, description: "Incident ID to add comment to" })
+    @ApiBody({ type: CreateIncidentCommentDTO, description: "Comment creation data" })
+    @ApiResponse({ status: 201, description: "Comment successfully created", type: IncidentCommentResponseDTO })
+    @ApiResponse({ status: 400, description: "Invalid input data" })
+    @ApiResponse({ status: 401, description: "Unauthorized - Invalid or missing authentication" })
+    @ApiResponse({ status: 404, description: "Incident not found" })
+    @ApiResponse({ status: 500, description: "Internal server error" })
+    async createComment(
+        @Param("id") incidentId: string,
+        @Body() createCommentDTO: CreateIncidentCommentDTO,
+        @Request() req
+    ): Promise<IncidentCommentResponseDTO> {
+        const currentUserId = this.getCurrentUserId(req);
+        if (!currentUserId) {
+            throw new Error("User ID not found in token");
+        }
+
+        // Override incident_id from URL parameter for security
+        const commentDTO: CreateIncidentCommentDTO = {
+            ...createCommentDTO,
+            incident_id: incidentId
+        };
+
+        return this.incidentService.createComment(commentDTO, currentUserId);
+    }
+
+    @Get(":id/comments")
+    @ApiOperation({ summary: "Get incident comments", description: "Retrieve all comments for a specific incident (requires authentication)" })
+    @ApiParam({ name: "id", type: String, description: "Incident ID to get comments for" })
+    @ApiResponse({ status: 200, description: "Successfully retrieved incident comments", type: [IncidentCommentResponseDTO] })
+    @ApiResponse({ status: 401, description: "Unauthorized - Invalid or missing authentication" })
+    @ApiResponse({ status: 404, description: "Incident not found" })
+    @ApiResponse({ status: 500, description: "Internal server error" })
+    async getIncidentComments(
+        @Param("id") incidentId: string,
+        @Request() req
+    ): Promise<IncidentCommentResponseDTO[]> {
+        const currentUserId = this.getCurrentUserId(req);
+        return this.incidentService.getIncidentComments(incidentId, currentUserId);
+    }
+
+    @Put("comments/:commentId")
+    @ApiOperation({ summary: "Update comment", description: "Update a comment by its ID (only comment owner can edit) (requires authentication)" })
+    @ApiParam({ name: "commentId", type: String, description: "Comment ID to update" })
+    @ApiBody({ type: UpdateIncidentCommentDTO, description: "Comment update data" })
+    @ApiResponse({ status: 200, description: "Comment successfully updated", type: IncidentCommentResponseDTO })
+    @ApiResponse({ status: 400, description: "Invalid input data" })
+    @ApiResponse({ status: 401, description: "Unauthorized - Invalid or missing authentication" })
+    @ApiResponse({ status: 403, description: "Forbidden - You can only edit your own comments" })
+    @ApiResponse({ status: 404, description: "Comment not found" })
+    @ApiResponse({ status: 500, description: "Internal server error" })
+    async updateComment(
+        @Param("commentId") commentId: string,
+        @Body() updateCommentDTO: UpdateIncidentCommentDTO,
+        @Request() req
+    ): Promise<IncidentCommentResponseDTO> {
+        const currentUserId = this.getCurrentUserId(req);
+        if (!currentUserId) {
+            throw new Error("User ID not found in token");
+        }
+
+        return this.incidentService.updateComment(commentId, updateCommentDTO, currentUserId);
+    }
+
+    @Delete("comments/:commentId")
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiOperation({ summary: "Delete comment", description: "Delete a comment by its ID (only comment owner can delete) (requires authentication)" })
+    @ApiParam({ name: "commentId", type: String, description: "Comment ID to delete" })
+    @ApiResponse({ status: 204, description: "Comment successfully deleted" })
+    @ApiResponse({ status: 401, description: "Unauthorized - Invalid or missing authentication" })
+    @ApiResponse({ status: 403, description: "Forbidden - You can only delete your own comments" })
+    @ApiResponse({ status: 404, description: "Comment not found" })
+    @ApiResponse({ status: 500, description: "Internal server error" })
+    async deleteComment(
+        @Param("commentId") commentId: string,
+        @Request() req
+    ): Promise<void> {
+        const currentUserId = this.getCurrentUserId(req);
+        if (!currentUserId) {
+            throw new Error("User ID not found in token");
+        }
+
+        await this.incidentService.deleteComment(commentId, currentUserId);
+    }
+
+    @Get("comments/:commentId")
+    @ApiOperation({ summary: "Get comment by ID", description: "Retrieve a specific comment by its ID (requires authentication)" })
+    @ApiParam({ name: "commentId", type: String, description: "Comment ID to retrieve" })
+    @ApiResponse({ status: 200, description: "Successfully retrieved comment", type: IncidentCommentResponseDTO })
+    @ApiResponse({ status: 401, description: "Unauthorized - Invalid or missing authentication" })
+    @ApiResponse({ status: 404, description: "Comment not found" })
+    @ApiResponse({ status: 500, description: "Internal server error" })
+    async getCommentById(
+        @Param("commentId") commentId: string,
+        @Request() req
+    ): Promise<IncidentCommentResponseDTO> {
+        const currentUserId = this.getCurrentUserId(req);
+        return this.incidentService.getCommentById(commentId, currentUserId);
     }
 
     /**

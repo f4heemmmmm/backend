@@ -5,6 +5,8 @@ import { DataSource } from "typeorm";
 import { User } from "src/modules/user/user.entity";
 import { Alert } from "src/modules/alert/alert.entity";
 import { Incident } from "src/modules/incident/incident.entity";
+import { IncidentStatusHistory } from "src/modules/incident/incident-status-history.entity";
+import { IncidentComment } from "src/modules/incident/incident-comment.entity";
 
 /**
  * AppDataSource - Enterprise TypeORM configuration for PostgreSQL database connectivity.
@@ -23,7 +25,7 @@ import { Incident } from "src/modules/incident/incident.entity";
  * - PostgreSQL database connectivity with connection parameter validation
  * - Environment variable integration for deployment flexibility
  * - Migration tracking with dedicated migrations table
- * - Entity registration for User, Alert, and Incident domains
+ * - Entity registration for User, Alert, Incident, IncidentStatusHistory, and IncidentComment domains
  * - Development vs production behavior differentiation
  * - Logging configuration for query monitoring and performance analysis
  * 
@@ -38,8 +40,8 @@ export const AppDataSource = new DataSource({
     database: process.env.DATABASE_NAME || "insider_threat",
     username: process.env.DATABASE_USERNAME || "postgres",
     password: process.env.DATABASE_PASSWORD || "postgres",
-    entities: [Alert, Incident, User],
-    migrations: [__dirname + "/../migrations/*.ts"],
+    entities: [Alert, Incident, User, IncidentStatusHistory, IncidentComment],
+    migrations: [__dirname + "/../../database/migrations/*.ts"],
     migrationsTableName: "migrations",
     synchronize: process.env.NODE_ENV !== "production",
     logging: process.env.NODE_ENV !== "production",

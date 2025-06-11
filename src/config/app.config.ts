@@ -5,6 +5,8 @@ import { registerAs } from "@nestjs/config";
 import { User } from "src/modules/user/user.entity";
 import { Alert } from "src/modules/alert/alert.entity";
 import { Incident } from "src/modules/incident/incident.entity";
+import { IncidentStatusHistory } from "src/modules/incident/incident-status-history.entity";
+import { IncidentComment } from "src/modules/incident/incident-comment.entity";
 
 const defaultStoragePath = "/app/storage";
 
@@ -27,7 +29,7 @@ export default registerAs("config", () => ({
         database: process.env.DATABASE_NAME || "insider_threat",
         username: process.env.DATABASE_USERNAME || "postgres",
         password: process.env.DATABASE_PASSWORD || "postgres",
-        entities: [Alert, Incident, User],
+        entities: [Alert, Incident, User, IncidentStatusHistory, IncidentComment],
         migrations: process.env.NODE_ENV === "production" 
             ? [__dirname + "/../migrations/*.js"]
             : [__dirname + "/../migrations/*.ts"],

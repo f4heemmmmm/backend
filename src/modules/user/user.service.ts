@@ -4,61 +4,28 @@ import { Repository } from "typeorm";
 import { JwtService } from "@nestjs/jwt";
 import { LoginDTO } from "../auth/dto/login.dto";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Injectable, UnauthorizedException, OnModuleInit } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 
 /**
- * UserService for JWT authentication and user management with automatic setup.
+ * UserService for JWT authentication and user management.
  * 
  * Provides comprehensive authentication functionality including:
- * - Automatic default user creation for development/testing environments
  * - JWT token generation and verification with payload standardization
  * - User credential validation with plaintext password comparison
  * - Token lifecycle management including signing and verification
  * - User lookup operations by email and administrative user listing
  * - Secure user authentication flow with proper error handling
+ * - User information retrieval for incident status tracking
+ * 
+ * Note: Test users should be created manually via SQL for better production practices.
  */
 @Injectable()
-export class UserService implements OnModuleInit {
+export class UserService {
     constructor(
         @InjectRepository(User)
         private readonly userRepository: Repository<User>,
         private readonly jwtService: JwtService,
     ) {}
-
-    /**
-     * Initializes default user when module starts for development convenience.
-     */
-    async onModuleInit() {
-        await this.createDefaultUserIfNotExists();
-    }
-
-    /**
-     * Creates default test user for development/testing environments.
-     */
-    private async createDefaultUserIfNotExists(): Promise<void> {
-        try {
-            const existingUser = await this.userRepository.findOne({
-                where: { email: "admin@ensigninfosecurity.com" }
-            });
-
-            if (!existingUser) {
-                const defaultUser = this.userRepository.create({
-                    email: "admin@ensigninfosecurity.com",
-                    password: "password123",
-                    firstName: "Admin",
-                    lastName: "User",
-                    isActive: true
-                });
-
-                await this.userRepository.save(defaultUser);
-                console.log("✅ Default user created: admin@ensigninfosecurity.com / password123");
-            } else {
-                console.log("✅ Default user already exists");
-            }
-        } catch (error) {
-            console.error("❌ Error creating default user:", error);
-        }
-    }
 
     /**
      * Validates user credentials and returns user if authentication succeeds.
@@ -136,16 +103,43 @@ export class UserService implements OnModuleInit {
         }
     }
 
+    /**
+     * Finds user by email address for authentication and lookup purposes.
+     */
     async findByEmail(email: string): Promise<User | null> {
         return this.userRepository.findOne({
             where: { email, isActive: true }
         });
     }
 
+    /**
+     * Finds user by ID for incident status tracking and user information retrieval.
+     */
+    async findById(id: string): Promise<User | null> {
+        return this.userRepository.findOne({
+            where: { id, isActive: true },
+            select: ["id", "email", "firstName", "lastName", "createdAt"]
+        });
+    }
+
+    /**
+     * Returns all active users with basic information for administrative purposes.
+     */
     async findAll(): Promise<User[]> {
         return this.userRepository.find({
             where: { isActive: true },
             select: ["id", "email", "firstName", "lastName", "createdAt"]
         });
+    }
+
+    /**
+     * Gets user display name for status history tracking.
+     */
+    async getUserDisplayName(userId: string): Promise<string> {
+        const user = await this.findById(userId);
+        if (!user) {
+            return "Unknown User";
+        }
+        return `${user.firstName} ${user.lastName}`.trim() || user.email;
     }
 }

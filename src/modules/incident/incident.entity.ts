@@ -10,6 +10,7 @@ import { Entity, Column, PrimaryColumn, Index, BeforeInsert, BeforeUpdate } from
  * - Text array storage for flexible incident window data
  * - Timestamp tracking for incident start/end periods and audit trails
  * - Decimal precision scoring for risk assessment values
+ * - Boolean status tracking for incident closure state
  * - Automatic timestamp management for created/updated tracking
  */
 @Entity("incident")
@@ -32,6 +33,9 @@ export class Incident {
 
     @Column("text", { array: true })
     windows: string[];
+
+    @Column({ type: "boolean", default: false })
+    isClosed: boolean;
 
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
     created_at: Date;
