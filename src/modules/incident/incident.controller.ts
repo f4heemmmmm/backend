@@ -3,29 +3,17 @@ import { IncidentService } from "./incident.service";
 import { AlertResponseDTO } from "../alert/alert.dto";
 import { JWTAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateIncidentDTO, UpdateIncidentDTO, IncidentResponseDTO } from "./incident.dto";
-import { IncidentStatusHistoryResponseDTO } from "./incident-status-history.dto";
-import { CreateIncidentCommentDTO, UpdateIncidentCommentDTO, IncidentCommentResponseDTO } from "./incident-comment.dto";
+import { IncidentStatusHistoryResponseDTO } from "./status-history/incident-status-history.dto";
 import { ApiTags, ApiBody, ApiQuery, ApiResponse, ApiParam, ApiOperation, ApiCookieAuth } from "@nestjs/swagger";
+import { CreateIncidentCommentDTO, UpdateIncidentCommentDTO, IncidentCommentResponseDTO } from "./comment/incident-comment.dto";
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus, ParseFloatPipe, UseGuards, Request } from "@nestjs/common";
 
 type SortOrder = "asc" | "desc";
 type SortField = "windows_start" | "score" | "user";
 
 /**
- * IncidentController for managing security incident operations with comprehensive API endpoints.
- * 
- * Enhanced with user tracking for status changes and full comment functionality:
- * - CRUD operations for incident management with validation
- * - Advanced search and filtering with flexible date and score ranges
- * - User-specific incident retrieval and threshold-based queries
- * - Alert correlation and relationship management
- * - Pagination support and flexible sorting across multiple fields
- * - JWT authentication protection for all endpoints
- * - Status change history tracking with user attribution
- * - User tracking for incident closure/reopening actions
- * - Current user extraction from JWT tokens for audit trails
- * - Complete comment system with CRUD operations and user ownership
- * - Comment timeline integration with user permissions
+ * Controller for managing security incidents with CRUD operations, search functionality,
+ * comment system, and comprehensive audit tracking.
  */
 @ApiTags("incidents")
 @Controller("incident")
@@ -35,15 +23,32 @@ export class IncidentController {
     constructor(
         private readonly incidentService: IncidentService
     ) {}
+    
+    /**
+     * Validates and sanitizes sort field parameter against allowed values
+     */
+    private validateSortField(sortField?: string): SortField {
+        const validFields: SortField[] = ["windows_start", "score", "user"];
+        return (sortField && validFields.includes(sortField as SortField)) 
+            ? sortField as SortField 
+            : "windows_start";
+    }
 
     /**
-     * Extracts current user ID from JWT token in request
+     * Validates and sanitizes sort order parameter for ascending/descending direction
+     */
+    private validateSortOrder(sortOrder?: string): SortOrder {
+        return (sortOrder && (sortOrder === "asc" || sortOrder === "desc")) 
+            ? sortOrder as SortOrder 
+            : "desc";
+    }
+
+    /**
+     * Extracts current user ID from JWT token for audit and ownership tracking
      */
     private getCurrentUserId(req: any): string | undefined {
         return req.user?.sub || req.user?.id;
     }
-
-    // =================== EXISTING INCIDENT ENDPOINTS ===================
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
@@ -73,7 +78,7 @@ export class IncidentController {
         @Query("offset") offset?: number,
         @Query("sortField") sortField?: string,
         @Query("sortOrder") sortOrder?: string,
-    ): Promise<{ incidents: IncidentResponseDTO[]; total: number}> {
+    ): Promise<{ incidents: IncidentResponseDTO[]; total: number }> {
         const { limit: limitParam, offset: offsetParam, sortField: sortFieldParam, sortOrder: sortOrderParam, ...filters } = queryParams;
         return this.incidentService.findAll(
             filters,
@@ -269,7 +274,7 @@ export class IncidentController {
         await this.incidentService.removeById(id);
     }
 
-    // =================== COMMENT ENDPOINTS ===================
+    // =================== COMMENT MANAGEMENT ===================
 
     @Post(":id/comments")
     @HttpCode(HttpStatus.CREATED)
@@ -372,24 +377,5 @@ export class IncidentController {
     ): Promise<IncidentCommentResponseDTO> {
         const currentUserId = this.getCurrentUserId(req);
         return this.incidentService.getCommentById(commentId, currentUserId);
-    }
-
-    /**
-     * Validates sort field parameter against allowed values.
-     */
-    private validateSortField(sortField?: string): SortField {
-        const validFields: SortField[] = ["windows_start", "score", "user"];
-        return (sortField && validFields.includes(sortField as SortField)) 
-            ? sortField as SortField 
-            : "windows_start";
-    }
-
-    /**
-     * Validates sort order parameter for ascending/descending direction.
-     */
-    private validateSortOrder(sortOrder?: string): SortOrder {
-        return (sortOrder && (sortOrder === "asc" || sortOrder === "desc")) 
-            ? sortOrder as SortOrder 
-            : "desc";
     }
 }

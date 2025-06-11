@@ -3,7 +3,7 @@ import { IsString, IsArray, IsNumber, IsDateString, IsBoolean, IsOptional } from
 
 /**
  * CreateIncidentDTO for creating new security incident records with validation.
- * Contains required incident fields including time windows, scoring data, and closure status.
+ * Contains required incident fields including time window, scoring dat and closure status.
  */
 export class CreateIncidentDTO {
     @IsString()
@@ -23,7 +23,7 @@ export class CreateIncidentDTO {
 
     @IsOptional()
     @IsBoolean()
-    isClosed?: boolean;
+    is_closed?: boolean;
 }
 
 /**
@@ -53,21 +53,21 @@ export class UpdateIncidentDTO {
 
     @IsOptional()
     @IsBoolean()
-    isClosed?: boolean;
+    is_closed?: boolean;
 }
 
 /**
  * IncidentResponseDTO for API response data structure.
- * Represents complete incident information including generated ID, closure status, and audit timestamps.
+ * Represents complete incident information including generated ID, closure status and audit timestamps.
  */
 export class IncidentResponseDTO {
-    ID: string;
+    id: string;
     user: string;
     windows_start: Date;
     windows_end: Date;
     score: number;
     windows: string[];
-    isClosed: boolean;
+    is_closed: boolean;
     created_at: Date;
     updated_at: Date;
 }
