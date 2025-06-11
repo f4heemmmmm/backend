@@ -1,29 +1,23 @@
 // backend/src/common/utils/csv-parser.util.ts
+
+// Node.js Core
 import * as fs from "fs";
 import * as path from "path";
-import * as csv from "csv-parse";
-import { ConfigService } from "@nestjs/config";
-import { Injectable, Logger } from "@nestjs/common";
 
+// Third-party Libraries
+import * as csv from "csv-parse";
+
+// NestJS Core
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+
+// DTOs
 import { CreateAlertDTO } from "src/modules/alert/alert.dto";
 import { CreateIncidentDTO } from "src/modules/incident/incident.dto";
 
 /**
- * CSVParserUtil - Enhanced enterprise CSV parsing utility for security incident and alert data processing.
- * 
- * This comprehensive utility provides robust CSV parsing capabilities including:
- * - Advanced multi-format CSV parsing with intelligent column mapping and data validation
- * - Sophisticated evidence parsing supporting complex JSON arrays, escaped strings, and malformed data
- * - Multi-strategy JSON parsing with progressive fallback mechanisms
- * - Intelligent timestamp parsing supporting Unix timestamps, ISO dates, and custom formats
- * - Complex array parsing for incident windows and alert event lists with various serialization formats
- * - Enhanced file system operations with cross-device compatibility and conflict resolution
- * - Comprehensive error handling with detailed logging for debugging and monitoring
- * - Advanced data transformation pipelines converting raw CSV data into validated DTOs
- * - Resilient parsing mechanisms for handling real-world data inconsistencies
- * 
- * The utility is designed to handle enterprise-grade CSV data with complex nested structures,
- * providing maximum data recovery while maintaining integrity and providing meaningful fallbacks.
+ * CSV parsing utility with robust parsing strategies for security incident and alert data,
+ * including complex evidence processing and intelligent file operations.
  */
 @Injectable()
 export class CSVParserUtil {
@@ -49,15 +43,7 @@ export class CSVParserUtil {
     }
     
     /**
-     * Parses incident CSV files and transforms records into validated DTOs for database insertion.
-     * 
-     * This method provides comprehensive incident data processing including:
-     * - Strict validation of required fields (user, windows_start, windows_end)
-     * - Intelligent timestamp parsing supporting Unix timestamps and ISO date strings
-     * - Complex windows array parsing with support for various string formats and delimiters
-     * - Data type conversion and validation with fallback values for optional fields
-     * - Error recovery mechanisms to maximize successful record processing
-     * - Detailed logging for monitoring parsing progress and debugging failures
+     * Parses incident CSV files with timestamp handling and windows array processing
      */
     async parseIncidentsCSV(filePath: string): Promise<CreateIncidentDTO[]> {
         this.logger.debug(`Parsing incidents CSV file: ${filePath}`);
@@ -88,24 +74,17 @@ export class CSVParserUtil {
                 try {
                     this.logger.debug(`Processing incident record: ${JSON.stringify(record)}`);
                     
+                    // Validate required fields
                     if (!record.user || !record.windows_start || !record.windows_end) {
                         this.logger.warn("Skipping record with missing required fields!", record);
                         continue;
                     }
                     
+                    // Parse timestamps with Unix timestamp support
                     let windowsStart: Date, windowsEnd: Date;
                     try {
-                        if (/^\d+$/.test(record.windows_start.toString())) {
-                            windowsStart = new Date(parseInt(record.windows_start) * 1000);
-                        } else {
-                            windowsStart = new Date(record.windows_start);
-                        }
-                        
-                        if (/^\d+$/.test(record.windows_end.toString())) {
-                            windowsEnd = new Date(parseInt(record.windows_end) * 1000);
-                        } else {
-                            windowsEnd = new Date(record.windows_end);
-                        }
+                        windowsStart = this.parseTimestamp(record.windows_start);
+                        windowsEnd = this.parseTimestamp(record.windows_end);
                         
                         if (isNaN(windowsStart.getTime()) || isNaN(windowsEnd.getTime())) {
                             throw new Error(`Invalid timestamp values: start=${record.windows_start}, end=${record.windows_end}`);
@@ -115,68 +94,8 @@ export class CSVParserUtil {
                         continue;
                     }
 
-                    const parsedWindows: string[] = [];
-                    if (record.windows) {
-                        try {
-                            if (typeof record.windows === "string") {
-                                if (record.windows.startsWith("[") && record.windows.endsWith("]")) {
-                                    const windows = record.windows
-                                        .replace(/^\[|\]$/g, "")
-                                        .split(/"\s*,?\s*"/)
-                                        .map((dateStr: string) => dateStr.replace(/^"|"$/g, "").trim())
-                                        .filter((dateStr: string) => dateStr.length > 0);
-                                    
-                                    windows.forEach((dateStr: string) => {
-                                        try {
-                                            const date = new Date(dateStr);
-                                            if (!isNaN(date.getTime())) {
-                                                parsedWindows.push(date.toISOString());
-                                            }
-                                        } catch (e) {
-                                            this.logger.warn(`Invalid date string: ${dateStr}`);
-                                        }
-                                    });
-                                } else if (record.windows.includes(",")) {
-                                    record.windows
-                                        .split(",")
-                                        .map(dateStr => dateStr.trim())
-                                        .filter(dateStr => dateStr.length > 0)
-                                        .forEach(dateStr => {
-                                            try {
-                                                const date = new Date(dateStr);
-                                                if (!isNaN(date.getTime())) {
-                                                    parsedWindows.push(date.toISOString());
-                                                }
-                                            } catch (e) {
-                                                this.logger.warn(`Invalid date string: ${dateStr}`);
-                                            }
-                                        });
-                                } else {
-                                    try {
-                                        const date = new Date(record.windows);
-                                        if (!isNaN(date.getTime())) {
-                                            parsedWindows.push(date.toISOString());
-                                        }
-                                    } catch (e) {
-                                        this.logger.warn(`Invalid date string: ${record.windows}`);
-                                    }
-                                }
-                            } else if (Array.isArray(record.windows)) {
-                                record.windows.forEach((dateStr: string) => {
-                                    try {
-                                        const date = new Date(dateStr);
-                                        if (!isNaN(date.getTime())) {
-                                            parsedWindows.push(date.toISOString());
-                                        }
-                                    } catch (e) {
-                                        this.logger.warn(`Invalid date string: ${dateStr}`);
-                                    }
-                                });
-                            }
-                        } catch (error) {
-                            this.logger.warn(`Error parsing windows array: ${error.message}`, record);
-                        }
-                    }
+                    // Parse windows array with multiple format support
+                    const parsedWindows: string[] = this.parseWindowsArray(record.windows);
 
                     const incident: CreateIncidentDTO = {
                         user: record.user,
@@ -206,14 +125,7 @@ export class CSVParserUtil {
     }
 
     /**
-     * Enhanced alert CSV parsing with sophisticated evidence processing.
-     * 
-     * This method now includes:
-     * - Multi-strategy evidence parsing for complex JSON structures
-     * - Support for arrays of objects with escaped quotes
-     * - Progressive fallback mechanisms for malformed data
-     * - Enhanced list_raw_events parsing for various formats
-     * - Robust error recovery with meaningful defaults
+     * Parses alert CSV files with advanced evidence processing and data validation
      */
     async parseAlertCSV(filePath: string): Promise<CreateAlertDTO[]> {
         this.logger.debug(`Parsing alert CSV file: ${filePath}`);
@@ -244,7 +156,7 @@ export class CSVParserUtil {
                 try {
                     this.logger.debug(`Processing alert record: ${JSON.stringify(record)}`);
                     
-                    // Enhanced evidence parsing with multiple strategies
+                    // Parse evidence with multiple fallback strategies
                     let evidence: any = {
                         site: "",
                         count: 0,
@@ -255,7 +167,7 @@ export class CSVParserUtil {
                         evidence = this.parseEvidenceField(record.evidence);
                     }
 
-                    // Enhanced list_raw_events parsing
+                    // Ensure list_raw_events is properly formatted
                     if (!Array.isArray(evidence.list_raw_events)) {
                         try {
                             evidence.list_raw_events = this.parseListRawEvents(evidence.list_raw_events || "");
@@ -265,18 +177,15 @@ export class CSVParserUtil {
                         }
                     }
                     
-                    // Ensure evidence has proper structure
+                    // Normalize evidence structure
                     evidence.count = typeof evidence.count === "number" ? evidence.count : parseInt(evidence.count) || 0;
                     evidence.site = evidence.site || "";
                     
+                    // Parse datestr with timestamp support
                     let datestr: Date;
                     try {
                         if (record.datestr) {
-                            if (/^\d+$/.test(record.datestr.toString())) {
-                                datestr = new Date(parseInt(record.datestr) * 1000);
-                            } else {
-                                datestr = new Date(record.datestr);
-                            }
+                            datestr = this.parseTimestamp(record.datestr);
                             
                             if (isNaN(datestr.getTime())) {
                                 throw new Error(`Invalid timestamp: ${record.datestr}`);
@@ -298,7 +207,7 @@ export class CSVParserUtil {
                         alert_name: record.alert_name || "",
                         MITRE_tactic: record.MITRE_tactic || "",
                         MITRE_technique: record.MITRE_technique || "",
-                        isUnderIncident: record.isUnderIncident === true || record.isUnderIncident === "true",
+                        is_under_incident: record.isUnderIncident === true || record.isUnderIncident === "true",
                         Logs: record.Logs || "",
                         Detection_model: record.Detection_model || "",
                         Description: record.Description || "",
@@ -323,16 +232,99 @@ export class CSVParserUtil {
         }
     }
 
+    // =================== PRIVATE HELPER METHODS ===================
+
     /**
-     * Enhanced evidence field parsing with comprehensive strategies for complex JSON structures.
-     * 
-     * This method handles:
-     * - Direct object/array evidence (already parsed)
-     * - JSON strings with various escape patterns
-     * - Arrays of complex objects with nested structures
-     * - Microsoft Graph API evidence format
-     * - Malformed JSON with intelligent recovery
-     * - Progressive fallback with meaningful defaults
+     * Parses timestamps supporting both Unix timestamps and ISO date strings
+     */
+    private parseTimestamp(timestamp: any): Date {
+        if (/^\d+$/.test(timestamp.toString())) {
+            return new Date(parseInt(timestamp) * 1000);
+        } else {
+            return new Date(timestamp);
+        }
+    }
+
+    /**
+     * Parses windows array from various string formats
+     */
+    private parseWindowsArray(windows: any): string[] {
+        const parsedWindows: string[] = [];
+        
+        if (!windows) {
+            return parsedWindows;
+        }
+
+        try {
+            if (typeof windows === "string") {
+                // Handle JSON array format
+                if (windows.startsWith("[") && windows.endsWith("]")) {
+                    const windowsArray = windows
+                        .replace(/^\[|\]$/g, "")
+                        .split(/"\s*,?\s*"/)
+                        .map((dateStr: string) => dateStr.replace(/^"|"$/g, "").trim())
+                        .filter((dateStr: string) => dateStr.length > 0);
+                    
+                    windowsArray.forEach((dateStr: string) => {
+                        try {
+                            const date = new Date(dateStr);
+                            if (!isNaN(date.getTime())) {
+                                parsedWindows.push(date.toISOString());
+                            }
+                        } catch (e) {
+                            this.logger.warn(`Invalid date string: ${dateStr}`);
+                        }
+                    });
+                } 
+                // Handle comma-separated format
+                else if (windows.includes(",")) {
+                    windows
+                        .split(",")
+                        .map(dateStr => dateStr.trim())
+                        .filter(dateStr => dateStr.length > 0)
+                        .forEach(dateStr => {
+                            try {
+                                const date = new Date(dateStr);
+                                if (!isNaN(date.getTime())) {
+                                    parsedWindows.push(date.toISOString());
+                                }
+                            } catch (e) {
+                                this.logger.warn(`Invalid date string: ${dateStr}`);
+                            }
+                        });
+                } 
+                // Handle single date string
+                else {
+                    try {
+                        const date = new Date(windows);
+                        if (!isNaN(date.getTime())) {
+                            parsedWindows.push(date.toISOString());
+                        }
+                    } catch (e) {
+                        this.logger.warn(`Invalid date string: ${windows}`);
+                    }
+                }
+            } else if (Array.isArray(windows)) {
+                windows.forEach((dateStr: string) => {
+                    try {
+                        const date = new Date(dateStr);
+                        if (!isNaN(date.getTime())) {
+                            parsedWindows.push(date.toISOString());
+                        }
+                    } catch (e) {
+                        this.logger.warn(`Invalid date string: ${dateStr}`);
+                    }
+                });
+            }
+        } catch (error) {
+            this.logger.warn(`Error parsing windows array: ${error.message}`);
+        }
+
+        return parsedWindows;
+    }
+
+    /**
+     * Parses evidence field using progressive fallback strategies for complex JSON structures
      */
     private parseEvidenceField(evidenceData: any): any {
         this.logger.debug(`Parsing evidence field of type: ${typeof evidenceData}`);
@@ -343,13 +335,13 @@ export class CSVParserUtil {
             list_raw_events: []
         };
 
-        // If it's already an object or array, use it directly
+        // Return objects/arrays directly
         if (typeof evidenceData === "object" && evidenceData !== null) {
             this.logger.debug("Evidence is already an object/array");
             return { ...defaultEvidence, ...evidenceData };
         }
 
-        // If it's not a string, convert to string and try parsing
+        // Convert to string if needed
         if (typeof evidenceData !== "string") {
             try {
                 evidenceData = String(evidenceData);
@@ -359,16 +351,16 @@ export class CSVParserUtil {
             }
         }
 
-        // Comprehensive parsing strategies for complex CSV evidence
+        // Progressive parsing strategies
         const strategies = [
-            // Strategy 1: Direct JSON parse
+            // Direct JSON parse
             () => {
                 const parsed = JSON.parse(evidenceData);
                 this.logger.debug("Strategy 1 (direct JSON parse) succeeded");
                 return parsed;
             },
 
-            // Strategy 2: Handle doubled quotes (most common in CSV exports)
+            // Handle doubled quotes (CSV export format)
             () => {
                 const doubleQuotesCleaned = evidenceData.replace(/""/g, '"');
                 const parsed = JSON.parse(doubleQuotesCleaned);
@@ -376,17 +368,15 @@ export class CSVParserUtil {
                 return parsed;
             },
 
-            // Strategy 3: Handle escaped quotes and surrounding quotes
+            // Handle escaped quotes and surrounding quotes
             () => {
                 let cleaned = evidenceData.trim();
                 
-                // Remove surrounding quotes if present
                 if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || 
                     (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
                     cleaned = cleaned.slice(1, -1);
                 }
                 
-                // Handle escaped quotes
                 cleaned = cleaned
                     .replace(/\\"/g, '"')
                     .replace(/\\\\/g, '\\')
@@ -397,7 +387,7 @@ export class CSVParserUtil {
                 return parsed;
             },
 
-            // Strategy 4: Handle Microsoft Graph API format with @odata.type
+            // Handle Microsoft Graph API format
             () => {
                 let cleaned = evidenceData
                     .replace(/""/g, '"')
@@ -408,7 +398,6 @@ export class CSVParserUtil {
                     .replace(/:""([^"]*)""/g, ':"$1"')
                     .trim();
 
-                // Remove outer quotes if they exist
                 if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
                     cleaned = cleaned.slice(1, -1);
                 }
@@ -418,10 +407,9 @@ export class CSVParserUtil {
                 return parsed;
             },
 
-            // Strategy 5: Handle nested escaping (common in complex CSV scenarios)
+            // Handle nested escaping
             () => {
                 let nestedEscaped = evidenceData;
-                // Handle multiple levels of escaping
                 for (let i = 0; i < 3; i++) {
                     try {
                         if (nestedEscaped.startsWith('"') && nestedEscaped.endsWith('"')) {
@@ -436,16 +424,16 @@ export class CSVParserUtil {
                 return finalParsed;
             },
 
-            // Strategy 6: Handle CSV cell format with aggressive cleaning
+            // Aggressive cleaning for CSV cells
             () => {
                 let aggressiveCleaned = evidenceData
-                    .replace(/^""|""$/g, '') // Remove leading/trailing doubled quotes
-                    .replace(/""/g, '"')      // Replace doubled quotes with single quotes
-                    .replace(/\\"/g, '"')     // Replace escaped quotes
-                    .replace(/\\\\/g, '\\')   // Replace escaped backslashes
-                    .replace(/\\n/g, '\n')    // Replace escaped newlines
-                    .replace(/\\r/g, '\r')    // Replace escaped carriage returns
-                    .replace(/\\t/g, '\t')    // Replace escaped tabs
+                    .replace(/^""|""$/g, '')
+                    .replace(/""/g, '"')
+                    .replace(/\\"/g, '"')
+                    .replace(/\\\\/g, '\\')
+                    .replace(/\\n/g, '\n')
+                    .replace(/\\r/g, '\r')
+                    .replace(/\\t/g, '\t')
                     .trim();
                 
                 const parsed = JSON.parse(aggressiveCleaned);
@@ -454,12 +442,12 @@ export class CSVParserUtil {
             }
         ];
 
-        // Try each strategy in order
+        // Try each strategy
         for (let i = 0; i < strategies.length; i++) {
             try {
                 const parsed = strategies[i]();
                 
-                // If it's an array, store it in list_raw_events
+                // Handle array results
                 if (Array.isArray(parsed)) {
                     return { 
                         ...defaultEvidence, 
@@ -474,7 +462,7 @@ export class CSVParserUtil {
             }
         }
 
-        // Strategy 7: Try to extract meaningful data from malformed JSON
+        // Final fallback: extract data from malformed JSON
         try {
             const extracted = this.extractDataFromMalformedJSON(evidenceData);
             if (extracted && Object.keys(extracted).length > 0) {
@@ -485,7 +473,7 @@ export class CSVParserUtil {
             this.logger.debug(`Strategy 7 failed: ${error.message}`);
         }
 
-        // Fallback: Store original string for manual inspection
+        // Store original string for inspection
         this.logger.warn(`All evidence parsing strategies failed, storing original data`);
         return { 
             ...defaultEvidence, 
@@ -495,13 +483,7 @@ export class CSVParserUtil {
     }
 
     /**
-     * Attempts to extract meaningful data from malformed JSON strings.
-     * 
-     * This method looks for common patterns and tries to extract:
-     * - Email addresses, user names, file names
-     * - Timestamps and dates
-     * - URLs and domains
-     * - Numeric values that might be counts or scores
+     * Extracts meaningful data from malformed JSON strings using pattern matching
      */
     private extractDataFromMalformedJSON(data: string): any {
         const extracted: any = {};
@@ -549,7 +531,7 @@ export class CSVParserUtil {
                 extracted.subjects = subjectMatches.map(match => match[1]);
             }
 
-            // Try to count objects in the string (approximate)
+            // Count approximate objects
             const objectCount = (data.match(/{[^}]*}/g) || []).length;
             if (objectCount > 0) {
                 extracted.approximateObjectCount = objectCount;
@@ -563,7 +545,7 @@ export class CSVParserUtil {
     }
 
     /**
-     * Enhanced list_raw_events parsing with support for complex nested structures.
+     * Parses list_raw_events with support for complex nested structures
      */
     private parseListRawEvents(listRawEvents: any): any[] {
         this.logger.debug(`Parsing list_raw_events: ${typeof listRawEvents}`);
@@ -577,7 +559,7 @@ export class CSVParserUtil {
                 return [];
             }
             
-            // Strategy 1: Direct JSON parse
+            // Direct JSON parse
             if (listRawEvents.startsWith("[") && listRawEvents.endsWith("]")) {
                 try {
                     return JSON.parse(listRawEvents);
@@ -586,7 +568,7 @@ export class CSVParserUtil {
                 }
             }
             
-            // Strategy 2: Handle doubled quotes
+            // Handle doubled quotes
             try {
                 const doubleQuotesCleaned = listRawEvents.replace(/""/g, '"');
                 if (doubleQuotesCleaned.startsWith("[") && doubleQuotesCleaned.endsWith("]")) {
@@ -596,7 +578,7 @@ export class CSVParserUtil {
                 this.logger.debug(`Doubled quotes strategy failed: ${error.message}`);
             }
             
-            // Strategy 3: Advanced cleaning for escaped JSON
+            // Advanced cleaning for escaped JSON
             try {
                 let cleaned = listRawEvents
                     .replace(/^["'\[]+|['"\\]+$/g, "")
@@ -608,7 +590,7 @@ export class CSVParserUtil {
                     return [];
                 }
 
-                // If it looks like a JSON array, wrap it properly
+                // Format as JSON array if needed
                 if (!cleaned.startsWith("[") && cleaned.includes("}{")) {
                     cleaned = `[${cleaned.replace(/}{/g, "},{")}]`;
                 } else if (!cleaned.startsWith("[") && cleaned.startsWith("{")) {
@@ -620,7 +602,7 @@ export class CSVParserUtil {
                 this.logger.debug(`Advanced cleaning strategy failed: ${error.message}`);
             }
 
-            // Strategy 4: Split and parse individual objects
+            // Split and parse individual objects
             try {
                 let cleanedString = listRawEvents
                     .replace(/^[""\[]+|[""\\]]+$/g, "")
@@ -659,7 +641,7 @@ export class CSVParserUtil {
                 this.logger.debug(`Individual object parsing failed: ${error.message}`);
             }
 
-            // Fallback: Return as single string item
+            // Return as single string item
             return [listRawEvents];
         }
         
@@ -667,7 +649,7 @@ export class CSVParserUtil {
     }
 
     /**
-     * Moves processed CSV files to designated directories with intelligent conflict resolution.
+     * Moves files with conflict resolution and cross-device support
      */
     async moveFile(sourcePath: string, destinationDirectory: string = this.processedPath): Promise<void> {
         try {
@@ -679,6 +661,7 @@ export class CSVParserUtil {
             await fs.promises.mkdir(destinationDirectory, { recursive: true });
             
             try {
+                // Check if destination exists and handle conflict
                 await fs.promises.access(destinationPath);
                 const timestamp = new Date().getTime();
                 const newDestPath = path.join(
@@ -692,6 +675,7 @@ export class CSVParserUtil {
                 try {
                     await fs.promises.rename(sourcePath, destinationPath);
                 } catch (renameError) {
+                    // Handle cross-device moves
                     if (renameError.code === "EXDEV") {
                         this.logger.warn("Cross-device rename not supported, using copy + delete");
                         await fs.promises.copyFile(sourcePath, destinationPath);
