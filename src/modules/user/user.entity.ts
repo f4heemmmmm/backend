@@ -12,7 +12,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
  * - Active status tracking for account management
  * - Automatic timestamp tracking for audit trails
  */
-@Entity("users")
+@Entity("user")
 export class User {
     @PrimaryGeneratedColumn("uuid")
     id: string;
@@ -24,17 +24,17 @@ export class User {
     password: string;
 
     @Column({ length: 100, nullable: true })
-    firstName?: string;
+    first_name?: string;
 
     @Column({ length: 100, nullable: true })
-    lastName?: string;
+    last_name?: string;
 
     @Column({ default: true })
-    isActive: boolean;
+    is_active: boolean;
 
     @CreateDateColumn()
-    createdAt: Date;
+    created_at: Date;
 
     @UpdateDateColumn()
-    updatedAt: Date;
+    updated_at: Date;
 }

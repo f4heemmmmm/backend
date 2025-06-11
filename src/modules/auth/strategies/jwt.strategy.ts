@@ -40,14 +40,14 @@ export class JWTStrategy extends PassportStrategy(Strategy) {
      */
     async validate(payload: any) {
         const user = await this.userService.findByEmail(payload.email);
-        if (!user || !user.isActive) {
+        if (!user || !user.is_active) {
             throw new UnauthorizedException("User not found or inactive");
         }
         return {
             id: user.id,
             email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
+            firstName: user.first_name,
+            lastName: user.last_name,
         };
     }
 }

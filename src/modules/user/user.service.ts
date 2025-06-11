@@ -16,8 +16,6 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
  * - User lookup operations by email and administrative user listing
  * - Secure user authentication flow with proper error handling
  * - User information retrieval for incident status tracking
- * 
- * Note: Test users should be created manually via SQL for better production practices.
  */
 @Injectable()
 export class UserService {
@@ -32,19 +30,15 @@ export class UserService {
      */
     async validateUser(loginDTO: LoginDTO): Promise<User | null> {
         const { email, password } = loginDTO;
-
         const user = await this.userRepository.findOne({
-            where: { email, isActive: true }
+            where: { email, is_active: true }
         });
-
         if (!user) {
             return null;
         }
-
         if (user.password === password) {
             return user;
         }
-
         return null;
     }
 
@@ -55,8 +49,8 @@ export class UserService {
         const payload = {
             sub: user.id,
             email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
+            first_name: user.first_name,
+            last_name: user.last_name,
             iat: Math.floor(Date.now() / 1000),
         };
 
@@ -79,8 +73,8 @@ export class UserService {
             user: {
                 id: user.id,
                 email: user.email,
-                firstName: user.firstName,
-                lastName: user.lastName
+                first_name: user.first_name,
+                last_name: user.last_name
             }
         };
     }
@@ -93,7 +87,7 @@ export class UserService {
             const decoded = this.jwtService.verify(token);
             
             const user = await this.userRepository.findOne({
-                where: { id: decoded.sub, isActive: true }
+                where: { id: decoded.sub, is_active: true }
             });
 
             return user;
@@ -108,17 +102,17 @@ export class UserService {
      */
     async findByEmail(email: string): Promise<User | null> {
         return this.userRepository.findOne({
-            where: { email, isActive: true }
+            where: { email, is_active: true }
         });
     }
 
     /**
      * Finds user by ID for incident status tracking and user information retrieval.
      */
-    async findById(id: string): Promise<User | null> {
+    async findByID(id: string): Promise<User | null> {
         return this.userRepository.findOne({
-            where: { id, isActive: true },
-            select: ["id", "email", "firstName", "lastName", "createdAt"]
+            where: { id, is_active: true },
+            select: ["id", "email", "first_name", "last_name", "created_at"]
         });
     }
 
@@ -127,19 +121,19 @@ export class UserService {
      */
     async findAll(): Promise<User[]> {
         return this.userRepository.find({
-            where: { isActive: true },
-            select: ["id", "email", "firstName", "lastName", "createdAt"]
+            where: { is_active: true },
+            select: ["id", "email", "first_name", "last_name", "created_at"]
         });
     }
 
     /**
      * Gets user display name for status history tracking.
      */
-    async getUserDisplayName(userId: string): Promise<string> {
-        const user = await this.findById(userId);
+    async getUserDisplayName(userID: string): Promise<string> {
+        const user = await this.findByID(userID);
         if (!user) {
             return "Unknown User";
         }
-        return `${user.firstName} ${user.lastName}`.trim() || user.email;
+        return `${user.first_name} ${user.last_name}`.trim() || user.email;
     }
 }

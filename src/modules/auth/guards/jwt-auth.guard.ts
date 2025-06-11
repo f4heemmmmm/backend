@@ -35,7 +35,7 @@ export class JWTAuthGuard implements CanActivate {
             
             const user = await this.userService.findByEmail(payload.email);
             
-            if (!user || !user.isActive) {
+            if (!user || !user.is_active) {
                 throw new UnauthorizedException("User not found or inactive");
             }
 

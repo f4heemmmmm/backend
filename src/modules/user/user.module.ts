@@ -8,17 +8,6 @@ import { User } from "./user.entity";
 import { UserService } from "./user.service";
 import { UserController } from "./user.controller";
 
-/**
- * UserModule for JWT authentication and user management functionality.
- * 
- * Provides comprehensive user authentication capabilities including:
- * - TypeORM entity registration for User data access
- * - JWT module configuration with environment-based secrets
- * - Token security settings including expiration, issuer, and audience
- * - User service for authentication business logic
- * - Service and JWT module exports for cross-module integration
- * - Configurable token lifetime and security parameters
- */
 @Module({
     imports: [
         TypeOrmModule.forFeature([User]),
