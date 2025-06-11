@@ -13,14 +13,13 @@ import { webcrypto } from "node:crypto";
  * This polyfill resolves "crypto is not defined" errors in TypeORM
  * and ensures consistent crypto functionality across all environments.
  */
-
 if (typeof globalThis.crypto === "undefined") {
-    // @ts-ignore - TypeScript doesn't know about this polyfill
+    // @ts-ignore - TypeScript doesn't recognize this polyfill assignment
     globalThis.crypto = webcrypto;
 }
 
 if (typeof global.crypto === "undefined") {
-    // @ts-ignore
+    // @ts-ignore - Required for Node.js compatibility
     global.crypto = webcrypto;
 }
 
