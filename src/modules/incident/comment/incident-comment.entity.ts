@@ -1,5 +1,4 @@
 // backend/src/modules/incident/comment/incident-comment.entity.ts
-
 import { Incident } from "../incident.entity";
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, Index } from "typeorm";
 
