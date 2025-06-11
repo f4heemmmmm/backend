@@ -17,7 +17,7 @@ import { Entity, Column, PrimaryColumn, Index, BeforeInsert, BeforeUpdate } from
 @Index(["user", "windows_start", "windows_end"], { unique: true })
 export class Incident {
     @PrimaryColumn()
-    ID: string;
+    id: string;
 
     @Column()
     user: string;
@@ -35,7 +35,7 @@ export class Incident {
     windows: string[];
 
     @Column({ type: "boolean", default: false })
-    isClosed: boolean;
+    is_closed: boolean;
 
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
     created_at: Date;
@@ -43,14 +43,10 @@ export class Incident {
     @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP" })
     updated_at: Date;
 
-    /**
-     * Generates deterministic SHA-256 hash ID from composite key fields.
-     * Called automatically before insert/update operations.
-     */
     @BeforeInsert()
     @BeforeUpdate()
     generateID() {
         const hashInput = `${this.user}|${this.windows_start.toISOString()}|${this.windows_end.toISOString()}`;
-        this.ID = createHash("sha256").update(hashInput).digest("hex");
+        this.id = createHash("sha256").update(hashInput).digest("hex");
     }
 }

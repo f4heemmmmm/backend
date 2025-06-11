@@ -43,5 +43,5 @@ export class IncidentCommentResponseDTO {
     is_deleted: boolean;
     user_display_name?: string;
     can_edit?: boolean;
-    can_delete?: boolean;a
+    can_delete?: boolean;
 }
